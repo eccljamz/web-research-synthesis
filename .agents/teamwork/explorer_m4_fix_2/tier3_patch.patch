@@ -1,0 +1,36 @@
+--- a/tests/test_tier3_cross_feature.py
++++ b/tests/test_tier3_cross_feature.py
+@@ -48,7 +48,10 @@
+     )
+     from research_synthesis.retrieval.decomposer import HeuristicQueryDecomposer
+     from research_synthesis.retrieval.parser import DocumentParser, RobustHTMLParser
+-    from research_synthesis.retrieval.retriever import MockWebRetrievalClient
++    from research_synthesis.retrieval.retriever import (
++        CompositeRetrievalClient,
++        MockWebRetrievalClient,
++    )
+     from research_synthesis.extraction.bm25 import BM25Filter, PureBM25
+     from research_synthesis.extraction.chunker import PassageChunker
+     from research_synthesis.extraction.claims import ClaimExtractor
+@@ -77,7 +80,10 @@
+     )
+     from src.research_synthesis.retrieval.decomposer import HeuristicQueryDecomposer
+     from src.research_synthesis.retrieval.parser import DocumentParser, RobustHTMLParser
+-    from src.research_synthesis.retrieval.retriever import MockWebRetrievalClient
++    from src.research_synthesis.retrieval.retriever import (
++        CompositeRetrievalClient,
++        MockWebRetrievalClient,
++    )
+     from src.research_synthesis.extraction.bm25 import BM25Filter, PureBM25
+     from src.research_synthesis.extraction.chunker import PassageChunker
+     from src.research_synthesis.extraction.claims import ClaimExtractor
+@@ -137,7 +143,8 @@
+                 self.assertEqual(raw_doc.status_code, 200)
+ 
+         # 2. Test composite retrieve_batch contract
+-        batch = self.retriever.retrieve_batch(topic=topic, sub_queries=sub_queries, limit_per_subquery=2)
++        composite = CompositeRetrievalClient(mock_client=self.retriever, offline_mode=True)
++        batch = composite.retrieve_batch(topic=topic, sub_queries=sub_queries, limit_per_subquery=2)
+         self.assertIsInstance(batch, RetrievalBatch)
+         self.assertEqual(batch.topic, topic)
+         self.assertGreater(len(batch.documents), 0)

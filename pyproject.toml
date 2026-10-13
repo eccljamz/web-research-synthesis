@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-synthesis"
+version = "0.1.0"
+description = "Autonomous Web Research and Knowledge Synthesis System"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "DeepMind & Collaborative Engineering Team" }
+]
+keywords = [
+    "research", "synthesis", "retrieval", "bm25", "simhash",
+    "claim-extraction", "clustering", "knowledge-graph"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = []
+
+[project.scripts]
+research-synthesis = "research_synthesis.cli:main"
+run-research = "research_synthesis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["research_synthesis*"]
+
+[tool.setuptools.package-data]
+research_synthesis = ["py.typed"]

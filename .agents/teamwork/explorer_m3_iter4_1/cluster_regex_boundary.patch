@@ -1,0 +1,10 @@
+--- a/src/research_synthesis/synthesis/cluster.py
++++ b/src/research_synthesis/synthesis/cluster.py
+@@ -82,6 +82,6 @@
+ # Numerical metric extraction pattern
+ METRIC_REGEX = re.compile(
+-    r"\b(\d+(?:[.,]\d+)?)\s*(%|percentage|percent|pct|billion|million|trillion|USD|\$|dollars|dollar|EUR|Wh/kg|Wh/L|°C|tons|GW|MW|kWh|nm|mS/cm)?\b",
++    r"\b(\d+(?:[.,]\d+)?)\s*(%|percentage|percent|pct|billion|million|trillion|USD|\$|dollars|dollar|EUR|Wh/kg|Wh/L|°C|tons|GW|MW|kWh|nm|mS/cm)?(?!\w)",
+     re.IGNORECASE,
+ )
+ 

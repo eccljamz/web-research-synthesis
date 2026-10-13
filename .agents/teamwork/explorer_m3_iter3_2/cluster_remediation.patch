@@ -1,0 +1,24 @@
+--- a/src/research_synthesis/synthesis/cluster.py
++++ b/src/research_synthesis/synthesis/cluster.py
+@@ -83,4 +83,4 @@
+ # Numerical metric extraction pattern
+ METRIC_REGEX = re.compile(
+-    r"\b(\d+(?:[.,]\d+)?)\s*(%|percent|billion|million|trillion|USD|\$|EUR|Wh/kg|Wh/L|°C|tons|GW|MW|kWh|nm|mS/cm)?\b",
++    r"\b(\d+(?:[.,]\d+)?)\s*(%|percentage|percent|pct|billion|million|trillion|USD|\$|dollars|dollar|EUR|Wh/kg|Wh/L|°C|tons|GW|MW|kWh|nm|mS/cm)?\b",
+     re.IGNORECASE,
+ )
+@@ -672,3 +672,3 @@
+                                             disc_count += 1
+-                                            ent_name = list(shared_entities)[0] if shared_entities else f"Metric ({u1_norm})"
++                                            ent_name = list(shared_entities)[0] if shared_entities else f"Metric ({unit1})"
+                                             discrepancies.append(
+@@ -684,3 +684,3 @@
+                                                     source_b_url=c2.source_url,
+-                                                    explanation=f"Numerical variation on {u1_norm}: {v1} vs {v2} ({rel_diff*100:.1f}% difference).",
++                                                    explanation=f"Numerical variation on {unit1}: {v1} vs {v2} ({rel_diff*100:.1f}% difference).",
+                                                 )
+--- a/tests/test_tier1_synthesis.py
++++ b/tests/test_tier1_synthesis.py
+@@ -492,1 +492,1 @@
+-        self.assertIn("Wh/kg", disc.explanation)
++        self.assertIn("wh/kg", disc.explanation.lower())

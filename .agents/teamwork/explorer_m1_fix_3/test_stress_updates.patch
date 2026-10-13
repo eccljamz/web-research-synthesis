@@ -1,0 +1,33 @@
+--- a/tests/test_parser_boilerplate_stress.py
++++ b/tests/test_parser_boilerplate_stress.py
+@@ -316,6 +316,8 @@
+-        # EXPECTED: to_dict() should support BriefMetadata or convert it via to_dict() / asdict()
+-        # ACTUAL BUG: dict(self.metadata) crashes with TypeError
+-        with self.assertRaises(TypeError):
+-            brief.to_dict()
++        d = brief.to_dict()
++        self.assertEqual(d["metadata"]["query"], "Solid-State Batteries")
++        self.assertEqual(d["metadata"]["total_sources_scanned"], 10)
++        self.assertIn("total_claims_extracted", d["metadata"])
+ 
+     def test_markdown_citation_spacing_typo(self):
+@@ -336,3 +338,4 @@
+         md = brief.to_markdown()
+-        self.assertIn("[1 ,2 ,3]", md, "Observed the ' ,' join formatting typo in markdown rendering.")
++        self.assertIn("[1, 2, 3]", md, "Proper formatting with comma-space in citation rendering.")
++        self.assertNotIn("[1 ,2 ,3]", md, "Space-before-comma typo should not be present.")
+ 
+     def test_missing_from_dict_on_retrieval_batch_and_scored_passage(self):
+@@ -344,2 +347,2 @@
+-        self.assertFalse(hasattr(RetrievalBatch, "from_dict"), "RetrievalBatch is missing from_dict()")
+-        self.assertFalse(hasattr(ScoredPassage, "from_dict"), "ScoredPassage is missing from_dict()")
++        self.assertTrue(hasattr(RetrievalBatch, "from_dict"), "RetrievalBatch must provide from_dict()")
++        self.assertTrue(hasattr(ScoredPassage, "from_dict"), "ScoredPassage must provide from_dict()")
+ 
+     def test_document_metadata_from_dict_fails_on_doc_id(self):
+@@ -362,2 +365,3 @@
+-        with self.assertRaises(TypeError):
+-            DocumentMetadata.from_dict(data)
++        restored = DocumentMetadata.from_dict(data)
++        self.assertEqual(restored.url, meta.url)
++        self.assertEqual(restored.doc_id, meta.doc_id)

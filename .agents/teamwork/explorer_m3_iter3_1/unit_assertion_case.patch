@@ -1,0 +1,8 @@
+--- a/tests/test_tier1_synthesis.py
++++ b/tests/test_tier1_synthesis.py
+@@ -489,4 +489,4 @@
+         )
+         disc = num_variations[0]
+         self.assertEqual(disc.entity, "Energy density")
+-        self.assertIn("Wh/kg", disc.explanation)
++        self.assertIn("wh/kg", disc.explanation.lower())

@@ -1,0 +1,164 @@
+--- a/src/research_synthesis/retrieval/retriever.py
++++ b/src/research_synthesis/retrieval/retriever.py
+@@ -167,9 +167,10 @@ class MockWebRetrievalClient(BaseRetrievalClient):
+         corpus_path: Optional[str] = None,
+         corpus_dict: Optional[Dict[str, Dict[str, Any]]] = None,
+     ):
+-        self.corpus_path = corpus_path
++        self.corpus_path = str(corpus_path) if corpus_path else None
+         self._corpus: Dict[str, Dict[str, Any]] = {}
++        self._doc_id_to_url: Dict[str, str] = {}
+         if corpus_dict:
+             self._corpus.update(corpus_dict)
+         self._load_corpus()
+ 
+     def _load_corpus(self):
+         """Load corpus from manifest or HTML files, falling back to built-in fixtures."""
++        files_loaded = 0
+         if self.corpus_path and os.path.exists(self.corpus_path):
+             manifest_file = (
+                 self.corpus_path
+                 if os.path.isfile(self.corpus_path)
+                 else os.path.join(self.corpus_path, "manifest.json")
+             )
+             if os.path.exists(manifest_file):
+                 try:
+                     with open(manifest_file, "r", encoding="utf-8") as f:
+                         data = json.load(f)
+                     base_dir = os.path.dirname(manifest_file)
+                     # Support either dict of documents or manifest with 'documents' list
+                     doc_entries = data.get("documents", data) if isinstance(data, dict) else data
++                    items_to_process: List[Tuple[str, Dict[str, Any]]] = []
+                     if isinstance(doc_entries, list):
+                         for item in doc_entries:
+-                            url = item.get("url", "")
+-                            filepath = item.get("file")
+-                            if url and filepath:
+-                                full_p = os.path.join(base_dir, filepath)
+-                                if os.path.exists(full_p):
+-                                    with open(full_p, "r", encoding="utf-8") as hf:
+-                                        raw_html = hf.read()
+-                                    self._corpus[url] = {
+-                                        "title": item.get("title", ""),
+-                                        "author": item.get("author", ""),
+-                                        "published_date": item.get("published_date", ""),
+-                                        "raw_html": raw_html,
+-                                        "body": item.get("snippet", ""),
+-                                    }
++                            if isinstance(item, dict):
++                                items_to_process.append(("", item))
+                     elif isinstance(doc_entries, dict):
+-                        for url, item in doc_entries.items():
++                        for doc_key, item in doc_entries.items():
+                             if isinstance(item, dict):
+-                                self._corpus[url] = item
++                                items_to_process.append((doc_key, item))
++
++                    for doc_key, item in items_to_process:
++                        url = item.get("url", "")
++                        if not url and doc_key and (doc_key.startswith("http://") or doc_key.startswith("https://")):
++                            url = doc_key
++                        if not url and doc_key:
++                            url = doc_key
++
++                        if not url:
++                            continue
++
++                        filepath = item.get("file_path") or item.get("file") or item.get("path")
++                        raw_html = item.get("raw_html", "")
++
++                        if filepath and not raw_html:
++                            full_p = os.path.join(base_dir, filepath)
++                            if os.path.exists(full_p):
++                                try:
++                                    with open(full_p, "r", encoding="utf-8") as hf:
++                                        raw_html = hf.read()
++                                    files_loaded += 1
++                                except Exception as read_err:
++                                    logger.warning(f"Failed to read fixture file {full_p}: {read_err}")
++                            else:
++                                logger.debug(f"Fixture file not found: {full_p}")
++
++                        # Extract or fallback body for search indexing
++                        body = item.get("body") or item.get("snippet", "")
++                        if not body and raw_html:
++                            clean_body = re.sub(r"<[^>]+>", " ", raw_html)
++                            body = " ".join(clean_body.split())
++
++                        self._corpus[url] = {
++                            "doc_id": doc_key or item.get("doc_id", ""),
++                            "title": item.get("title", ""),
++                            "author": item.get("author", ""),
++                            "published_date": item.get("published_date", ""),
++                            "domain": item.get("domain", ""),
++                            "raw_html": raw_html,
++                            "body": body,
++                        }
++                        if doc_key:
++                            self._doc_id_to_url[doc_key] = url
+                 except Exception as err:
+                     logger.warning(f"Failed to load corpus from {manifest_file}: {err}")
+ 
++        # Fall back to default mock fixtures if corpus is empty or referenced files could not be loaded
++        has_substantive_content = any(doc.get("raw_html") or doc.get("body") for doc in self._corpus.values())
++        if not self._corpus or not has_substantive_content:
++            self._corpus.clear()
+             for url, data in DEFAULT_MOCK_CORPUS.items():
+                 title = data["title"]
+                 author = data.get("author", "")
+@@ -268,8 +317,13 @@ class MockWebRetrievalClient(BaseRetrievalClient):
+     def fetch_url(self, url: str, timeout: float = 8.0) -> RawWebDocument:
+         """Fetch document from offline mock corpus."""
+-        if url in self._corpus:
+-            doc = self._corpus[url]
++        target_url = url
++        doc = self._corpus.get(target_url)
++        if doc is None and target_url in self._doc_id_to_url:
++            target_url = self._doc_id_to_url[url]
++            doc = self._corpus.get(target_url)
++
++        if doc is not None:
+             raw_html = doc.get("raw_html")
+             if not raw_html:
+                 title = doc.get("title", "Mock Title")
+@@ -280,7 +334,7 @@ class MockWebRetrievalClient(BaseRetrievalClient):
+                 )
+             return RawWebDocument(
+-                url=url,
++                url=target_url,
+                 status_code=200,
+                 headers={"Content-Type": "text/html; charset=utf-8"},
+                 raw_html=raw_html,
+--- a/src/research_synthesis/retrieval/decomposer.py
++++ b/src/research_synthesis/retrieval/decomposer.py
+@@ -62,11 +62,19 @@ class HeuristicQueryDecomposer(BaseQueryDecomposer):
+     # Comparative regex patterns
+     COMPARATIVE_PATTERNS = [
++        # Pattern 1: Queries beginning with comparative phrases
+         re.compile(
+-            r"^(?:comparison\s+of\s+|a\s+comparison\s+between\s+)?(.+?)\s+(?:vs\.?|versus|compared\s+to|trade-offs?\s+between|differences?\s+between)\s+(.+)$",
++            r"^(?:(?:a|the)\s+)?(?:comparison\s+between|comparison\s+of|trade-offs?\s+between|trade-offs?\s+of|differences?\s+between|differences?\s+of|compare)\s+(.+?)\s+(?:and|vs\.?|versus|to|with)\s+(.+)$",
+             re.IGNORECASE,
+         ),
++        # Pattern 2: Standard infix comparisons
+         re.compile(
+-            r"^(.+?)\s+against\s+(.+)$",
++            r"^(?:(?:a|the)\s+)?(?:comparison\s+of\s+|comparison\s+between\s+)?(.+?)\s+(?:vs\.?|versus|compared\s+to|compared\s+with|against)\s+(.+)$",
++            re.IGNORECASE,
++        ),
++        # Pattern 3: Suffix comparisons
++        re.compile(
++            r"^(.+?)\s+and\s+(.+?)\s+(?:trade-offs?|differences?|comparison)$",
+             re.IGNORECASE,
+         ),
+     ]
+@@ -75,7 +83,7 @@ class HeuristicQueryDecomposer(BaseQueryDecomposer):
+     # Conversational filler prefixes to strip
+     FILLER_PREFIXES = [
+-        re.compile(r"^(?:can\s+you\s+(?:please\s+)?(?:explain|tell\s+me\s+about|research|investigate))\s+", re.IGNORECASE),
+-        re.compile(r"^(?:what\s+(?:is|are)\s+the\s+(?:state\s+of|details\s+on))\s+", re.IGNORECASE),
++        re.compile(r"^(?:can\s+you\s+(?:please\s+)?(?:explain|tell\s+me\s+about|research|investigate|explore|analyze))\s+", re.IGNORECASE),
++        re.compile(r"^(?:what\s+(?:is|are)\s+(?:the\s+)?(?:state\s+of\s+|details\s+on\s+)?)\s*", re.IGNORECASE),
+         re.compile(r"^(?:give\s+me\s+a\s+(?:detailed\s+)?(?:report|overview)\s+on)\s+", re.IGNORECASE),
+         re.compile(r"^(?:i\s+want\s+to\s+know\s+about)\s+", re.IGNORECASE),
+     ]

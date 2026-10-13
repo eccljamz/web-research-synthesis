@@ -1,0 +1,283 @@
+--- a/tests/test_tier1_synthesis.py
++++ b/tests/test_tier1_synthesis.py
+@@ -254,6 +254,196 @@ class TestThematicClusterer(unittest.TestCase):
+         total_discrepancies = sum(len(c.discrepancies) for c in clusters)
+         self.assertGreaterEqual(total_discrepancies, 1)
+ 
++    def test_consensus_single_domain_not_corroborated(self):
++        """Test that near-duplicate claims from the same domain do NOT emit a CorroboratedClaimGroup."""
++        claim_a = ExtractedClaim(
++            claim_id="clm-single-domain-1",
++            text="Solid-state battery cells achieve commercial energy density of 500 Wh/kg.",
++            source_doc_id="doc-domain-01",
++            source_url="https://domain.com/a",
++            source_title="Domain Article A",
++            passage_snippet="Testing confirmed energy density of 500 Wh/kg.",
++            confidence_score=0.92,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["solid-state battery", "energy density"],
++            secondary_urls=[],
++        )
++        claim_b = ExtractedClaim(
++            claim_id="clm-single-domain-2",
++            text="Solid-state battery cells achieve commercial energy density of 500 Wh/kg in testing.",
++            source_doc_id="doc-domain-02",
++            source_url="https://domain.com/b",
++            source_title="Domain Article B",
++            passage_snippet="Production runs demonstrated energy density of 500 Wh/kg.",
++            confidence_score=0.90,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["solid-state battery", "energy density"],
++            secondary_urls=[],
++        )
++        # Direct consensus evaluation
++        direct_groups = self.clusterer._detect_consensus([claim_a, claim_b])
++        self.assertEqual(
++            len(direct_groups),
++            0,
++            "Direct _detect_consensus must not emit CorroboratedClaimGroup for single domain",
++        )
++
++        # Full clustering pipeline evaluation with companion claim in another facet to maintain 2 sections
++        companion = ExtractedClaim(
++            claim_id="clm-comp-econ",
++            text="Manufacturing capital expenditure exceeds 150 million dollars for pilot lines.",
++            source_doc_id="doc-comp",
++            source_url="https://mock-manufacturing.org/capex",
++            source_title="Manufacturing Capex",
++            passage_snippet="Capital expenditure exceeds 150 million dollars.",
++            confidence_score=0.85,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["capital expenditure"],
++        )
++        clusters = self.clusterer.cluster([claim_a, claim_b, companion], self.sub_queries, self.topic)
++        total_corroborated = sum(len(c.corroborated_claims) for c in clusters)
++        self.assertEqual(
++            total_corroborated,
++            0,
++            "Claims originating from the same domain must NOT emit CorroboratedClaimGroup in any cluster",
++        )
++        for cluster in clusters:
++            self.assertEqual(len(cluster.corroborated_claims), 0)
++
++    def test_consensus_cross_domain_is_corroborated(self):
++        """Test that near-duplicate claims from distinct domains DO emit a CorroboratedClaimGroup."""
++        claim_a = ExtractedClaim(
++            claim_id="clm-cross-domain-1",
++            text="Solid-state battery cells achieve commercial energy density of 500 Wh/kg.",
++            source_doc_id="doc-domain-a",
++            source_url="https://domainA.com/a",
++            source_title="Domain A Report",
++            passage_snippet="Testing confirmed energy density of 500 Wh/kg.",
++            confidence_score=0.92,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["solid-state battery", "energy density"],
++            secondary_urls=[],
++        )
++        claim_b = ExtractedClaim(
++            claim_id="clm-cross-domain-2",
++            text="Solid-state battery cells achieve commercial energy density of 500 Wh/kg in testing.",
++            source_doc_id="doc-domain-b",
++            source_url="https://domainB.com/b",
++            source_title="Domain B Report",
++            passage_snippet="Production runs demonstrated energy density of 500 Wh/kg.",
++            confidence_score=0.90,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["solid-state battery", "energy density"],
++            secondary_urls=[],
++        )
++        # Direct consensus evaluation
++        direct_groups = self.clusterer._detect_consensus([claim_a, claim_b])
++        self.assertGreaterEqual(
++            len(direct_groups),
++            1,
++            "Direct _detect_consensus must emit CorroboratedClaimGroup for distinct domains",
++        )
++        self.assertGreaterEqual(
++            len(direct_groups[0].independent_domains),
++            2,
++            "Direct CorroboratedClaimGroup must have >= 2 independent domains",
++        )
++
++        # Full clustering pipeline evaluation
++        companion = ExtractedClaim(
++            claim_id="clm-comp-econ",
++            text="Manufacturing capital expenditure exceeds 150 million dollars for pilot lines.",
++            source_doc_id="doc-comp",
++            source_url="https://mock-manufacturing.org/capex",
++            source_title="Manufacturing Capex",
++            passage_snippet="Capital expenditure exceeds 150 million dollars.",
++            confidence_score=0.85,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["capital expenditure"],
++        )
++        clusters = self.clusterer.cluster([claim_a, claim_b, companion], self.sub_queries, self.topic)
++        all_groups = [g for c in clusters for g in c.corroborated_claims]
++        self.assertGreaterEqual(
++            len(all_groups),
++            1,
++            "Cross-domain near-duplicate claims MUST emit at least one CorroboratedClaimGroup",
++        )
++        group = all_groups[0]
++        self.assertGreaterEqual(
++            len(group.independent_domains),
++            2,
++            f"CorroboratedClaimGroup must have >= 2 independent domains, got {group.independent_domains}",
++        )
++        domains_lower = [d.lower() for d in group.independent_domains]
++        self.assertIn("domaina.com", domains_lower)
++        self.assertIn("domainb.com", domains_lower)
++
++    def test_discrepancy_numerical_unrelated_entities_not_flagged(self):
++        """Test that quantitative claims with disjoint entities sharing unit % are NOT flagged as a numerical conflict."""
++        claim_margin = ExtractedClaim(
++            claim_id="clm-margin-35",
++            text="Gross margin reached 35% across commercial manufacturing divisions.",
++            source_doc_id="doc-margin-01",
++            source_url="https://mock-finance.org/margins",
++            source_title="Financial Report",
++            passage_snippet="Gross margin reached 35% across commercial manufacturing divisions.",
++            confidence_score=0.91,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["Gross margin"],
++        )
++        claim_tax = ExtractedClaim(
++            claim_id="clm-tax-21",
++            text="Corporate tax rate was 21% for domestic operations.",
++            source_doc_id="doc-tax-01",
++            source_url="https://mock-tax.gov/corporate",
++            source_title="Tax Policy",
++            passage_snippet="Corporate tax rate was 21% for domestic operations.",
++            confidence_score=0.89,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["Corporate tax rate"],
++        )
++        # Direct discrepancy evaluation
++        direct_discrepancies = self.clusterer._detect_discrepancies([claim_margin, claim_tax])
++        self.assertEqual(
++            len(direct_discrepancies),
++            0,
++            "Disjoint entities sharing unit % must not produce discrepancies in _detect_discrepancies",
++        )
++
++        # Full clustering pipeline evaluation
++        companion = ExtractedClaim(
++            claim_id="clm-comp-tech",
++            text="Sulfide solid electrolyte room-temperature ionic conductivity reached 12 mS/cm.",
++            source_doc_id="doc-comp-tech",
++            source_url="https://mock-science.org/tech",
++            source_title="Tech Study",
++            passage_snippet="Sulfide conductivity reached 12 mS/cm.",
++            confidence_score=0.92,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["Sulfide"],
++        )
++        clusters = self.clusterer.cluster([claim_margin, claim_tax, companion], self.sub_queries, self.topic)
++        total_num_variations = sum(
++            len([d for d in c.discrepancies if d.discrepancy_type == "NUMERICAL_VARIATION"])
++            for c in clusters
++        )
++        self.assertEqual(
++            total_num_variations,
++            0,
++            "Quantitative claims on unrelated entities must NOT be flagged as numerical discrepancies",
++        )
++
++    def test_discrepancy_numerical_unit_synonyms_flagged(self):
++        """Test that quantitative claims on the same entity with variance are correctly flagged as NUMERICAL_VARIATION."""
++        claim_high = ExtractedClaim(
++            claim_id="clm-density-500",
++            text="Energy density reached 500 Wh/kg in advanced solid-state prototype cells.",
++            source_doc_id="doc-energy-01",
++            source_url="https://mock-science.org/density-high",
++            source_title="High Density Report",
++            passage_snippet="Testing showed energy density reached 500 Wh/kg.",
++            confidence_score=0.94,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["Energy density"],
++        )
++        claim_low = ExtractedClaim(
++            claim_id="clm-density-350",
++            text="Energy density was capped at 350 Wh/kg under commercial operating conditions.",
++            source_doc_id="doc-energy-02",
++            source_url="https://mock-industry.org/density-low",
++            source_title="Commercial Limits Report",
++            passage_snippet="Commercial limits showed energy density was capped at 350 Wh/kg.",
++            confidence_score=0.90,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["Energy density"],
++        )
++        # Direct discrepancy evaluation
++        direct_discrepancies = self.clusterer._detect_discrepancies([claim_high, claim_low])
++        num_variations_direct = [d for d in direct_discrepancies if d.discrepancy_type == "NUMERICAL_VARIATION"]
++        self.assertGreaterEqual(
++            len(num_variations_direct),
++            1,
++            "Direct _detect_discrepancies must flag NUMERICAL_VARIATION for same entity with > 15% diff",
++        )
++        self.assertEqual(num_variations_direct[0].entity, "Energy density")
++
++        # Full clustering pipeline evaluation
++        companion = ExtractedClaim(
++            claim_id="clm-comp-econ",
++            text="Manufacturing capital expenditure exceeds 150 million dollars for pilot lines.",
++            source_doc_id="doc-comp",
++            source_url="https://mock-manufacturing.org/capex",
++            source_title="Manufacturing Capex",
++            passage_snippet="Capital expenditure exceeds 150 million dollars.",
++            confidence_score=0.85,
++            claim_type=ClaimType.QUANTITATIVE,
++            entities=["capital expenditure"],
++        )
++        clusters = self.clusterer.cluster([claim_high, claim_low, companion], self.sub_queries, self.topic)
++        all_discrepancies = [d for c in clusters for d in c.discrepancies]
++        num_variations = [d for d in all_discrepancies if d.discrepancy_type == "NUMERICAL_VARIATION"]
++        self.assertGreaterEqual(
++            len(num_variations),
++            1,
++            "Clustering pipeline must emit at least one NUMERICAL_VARIATION discrepancy",
++        )
++        disc = num_variations[0]
++        self.assertEqual(disc.entity, "Energy density")
++        self.assertIn("Wh/kg", disc.explanation)
++
++        # Unit synonym alias verification (% vs percent) when UNIT_ALIASES is active
++        try:
++            from research_synthesis.synthesis import cluster as cluster_mod
++        except ImportError:
++            from src.research_synthesis.synthesis import cluster as cluster_mod
++
++        if hasattr(cluster_mod, "UNIT_ALIASES"):
++            claim_pct_a = ExtractedClaim(
++                claim_id="clm-silicon-35",
++                text="Silicon anode volumetric expansion reached 35% during continuous cycling.",
++                source_doc_id="doc-silicon-01",
++                source_url="https://mock-battery-lab.org/anode-expansion",
++                source_title="Anode Silicon Expansion Study",
++                passage_snippet="Testing showed silicon anode volumetric expansion reached 35%.",
++                confidence_score=0.92,
++                claim_type=ClaimType.QUANTITATIVE,
++                entities=["Silicon anode expansion"],
++            )
++            claim_pct_b = ExtractedClaim(
++                claim_id="clm-silicon-20",
++                text="Silicon anode volumetric expansion was limited to 20 percent in composite electrodes.",
++                source_doc_id="doc-silicon-02",
++                source_url="https://mock-battery-lab.org/composite-electrode",
++                source_title="Composite Electrode Performance",
++                passage_snippet="Testing showed silicon anode volumetric expansion was limited to 20 percent.",
++                confidence_score=0.88,
++                claim_type=ClaimType.QUANTITATIVE,
++                entities=["Silicon anode expansion"],
++            )
++            synonym_discrepancies = self.clusterer._detect_discrepancies([claim_pct_a, claim_pct_b])
++            num_var_syn = [d for d in synonym_discrepancies if d.discrepancy_type == "NUMERICAL_VARIATION"]
++            self.assertGreaterEqual(
++                len(num_var_syn),
++                1,
++                "Unit synonyms (% vs percent) on same entity must be detected as NUMERICAL_VARIATION",
++            )
++
+ 
+ # ============================================================================
+ # Suite 2: Extractive Synthesizer Unit Tests (F11)

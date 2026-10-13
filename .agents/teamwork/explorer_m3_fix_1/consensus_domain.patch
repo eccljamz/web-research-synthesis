@@ -1,0 +1,19 @@
+--- a/src/research_synthesis/synthesis/cluster.py
++++ b/src/research_synthesis/synthesis/cluster.py
+@@ -571,14 +571,15 @@ class ThematicClusterer:
+-            if len(unique_domains) >= 2 or len(supporting_ids) >= 1:
++            if len(unique_domains) >= 2:
+                 seen_primary.add(c_i.claim_id)
++                seen_primary.update(supporting_ids)
+                 groups.append(
+                     CorroboratedClaimGroup(
+                         group_id=f"corrob-{len(groups)+1:02d}",
+                         primary_claim_id=c_i.claim_id,
+                         supporting_claim_ids=supporting_ids,
+                         statement=c_i.text,
+                         source_urls=sorted(list(set(all_urls))),
+                         independent_domains=sorted(list(unique_domains)),
+-                        corroboration_score=min(1.0, 0.70 + 0.10 * max(len(unique_domains), len(supporting_ids) + 1)),
++                        corroboration_score=min(1.0, 0.70 + 0.10 * len(unique_domains)),
+                     )
+                 )

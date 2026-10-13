@@ -1,0 +1,36 @@
+--- a/src/research_synthesis/retrieval/parser.py
++++ b/src/research_synthesis/retrieval/parser.py
+@@ -88,6 +88,18 @@
+         if tag_lower == "title":
+             self._in_title = True
+             return
++
++        # Reset title state if unclosed <title> encounters structural or ignored boundaries
++        if self._in_title and (
++            tag_lower in self.BLOCK_TAGS
++            or tag_lower in self.HEADING_TAGS
++            or tag_lower in self.IGNORE_TAGS
++            or tag_lower in {"body", "html"}
++        ):
++            if not self.title:
++                title_text = " ".join("".join(self._current_text).split())
++                if title_text:
++                    self.title = html.unescape(title_text)
++            self._in_title = False
+ 
+         # If already inside an ignored subtree, track nested tags to match endtags accurately
+         if self._ignore_stack:
+@@ -162,11 +174,12 @@
+     def handle_data(self, data: str):
++        if self._ignore_stack:
++            return
+         if self._in_title:
+             self._current_text.append(data)
+-        elif not self._ignore_stack:
++        else:
+             self._current_text.append(data)
+ 
+     def _flush_text(self):
++        self._in_title = False
+         raw_text = "".join(self._current_text)
+         self._current_text = []

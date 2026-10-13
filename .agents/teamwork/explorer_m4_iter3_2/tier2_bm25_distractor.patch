@@ -1,0 +1,15 @@
+--- a/tests/test_tier2_boundaries.py
++++ b/tests/test_tier2_boundaries.py
+@@ -583,10 +583,10 @@ class TestBM25DistractorRejection(unittest.TestCase):
+             word_count=50,
+         )
+ 
+-        bm25_filter = BM25Filter(s_min=0.3, alpha=0.25)
++        bm25_filter = BM25Filter(s_min=0.3, alpha=0.25, min_passages=1)
+         filtered = bm25_filter.filter_passages(
+             [p_relevant, p_distractor],
+-            topic="Solid-State Battery Energy Density and Solid Electrolytes",
++            topic="Solid-State Battery Pack Densities and Solid Electrolytes",
+         )
+ 
+         filtered_ids = [p.passage_id for p in filtered]

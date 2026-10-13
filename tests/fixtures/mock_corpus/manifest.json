@@ -1,0 +1,301 @@
+{
+  "version": "1.0.0",
+  "corpus_description": "Deterministic multi-domain mock web corpus for autonomous research and synthesis verification",
+  "queries": [
+    {
+      "query_id": "query_solid_state_battery",
+      "domain": "science_technology",
+      "canonical_topic": "Next-Generation Solid-State Battery Commercialization: Energy Density Roadmaps, Solid Electrolytes, and Manufacturing Scalability",
+      "keywords": [
+        "solid-state battery",
+        "solid electrolytes",
+        "energy density",
+        "manufacturing scalability",
+        "sulfide",
+        "oxide",
+        "lithium metal anode",
+        "ionic conductivity"
+      ],
+      "sub_queries": [
+        "solid electrolyte materials ionic conductivity sulfide oxide",
+        "energy density Wh/kg roadmap Battery500 commercial targets",
+        "manufacturing scalability roll-to-roll pilot line dry room",
+        "silicon vs lithium metal anode dendrite suppression"
+      ],
+      "document_ids": [
+        "ssb_01_nature_materials",
+        "ssb_02_doe_roadmap",
+        "ssb_03_industry_pilot_lines",
+        "ssb_04_ad_heavy_duplicate",
+        "ssb_05_irrelevant_solar"
+      ]
+    },
+    {
+      "query_id": "query_supply_chain_reshoring",
+      "domain": "macroeconomics",
+      "canonical_topic": "Global Supply Chain Re-Shoring and Friend-Shoring Dynamics: Macroeconomic Inflation Impacts and Industrial Policy Interventions",
+      "keywords": [
+        "supply chain",
+        "re-shoring",
+        "friend-shoring",
+        "macroeconomic inflation",
+        "industrial policy",
+        "geoeconomic fragmentation",
+        "nearshoring",
+        "subsidies"
+      ],
+      "sub_queries": [
+        "geoeconomic fragmentation friend-shoring GDP loss IMF",
+        "industrial policy subsidies Inflation Reduction Act European Chips Act",
+        "nearshoring Mexico manufacturing labor cost premium resilience",
+        "macroeconomic inflation supply chain relocation trade barriers"
+      ],
+      "document_ids": [
+        "scr_01_imf_economic_outlook",
+        "scr_02_oecd_trade_shifts",
+        "scr_03_mckinsey_manufacturing",
+        "scr_04_near_duplicate_press",
+        "scr_05_irrelevant_crypto"
+      ]
+    },
+    {
+      "query_id": "query_little_ice_age",
+      "domain": "history_climatology",
+      "canonical_topic": "The Little Ice Age Climate Shocks in 17th Century Europe: Agrarian Output Collapses, Famine Cycles, and Social Upheaval",
+      "keywords": [
+        "Little Ice Age",
+        "climate shocks",
+        "17th century Europe",
+        "agrarian collapse",
+        "famine cycles",
+        "Maunder Minimum",
+        "volcanic aerosols",
+        "grain harvest failure"
+      ],
+      "sub_queries": [
+        "Maunder Minimum volcanic forcing temperature anomaly 17th century",
+        "agrarian harvest failure grain price spikes Scottish Finnish famine",
+        "General Crisis seventeenth century Thirty Years War economic history",
+        "dendrochronology paleo-climate proxy European cooling"
+      ],
+      "document_ids": [
+        "lia_01_historical_climatology",
+        "lia_02_agrarian_yield_records",
+        "lia_03_oxford_economic_history",
+        "lia_04_corrupt_malformed"
+      ]
+    },
+    {
+      "query_id": "query_microplastics",
+      "domain": "environmental_toxicology_law",
+      "canonical_topic": "Microplastic Bioaccumulation in Agricultural Soil Ecosystems: Trophic Transfer Mechanisms and Emerging EU Regulatory Directives",
+      "keywords": [
+        "microplastics",
+        "agricultural soil",
+        "bioaccumulation",
+        "trophic transfer",
+        "EU regulation",
+        "REACH restriction",
+        "soil microbiome",
+        "nanoplastics"
+      ],
+      "sub_queries": [
+        "agricultural soil sewage sludge mulch film microplastic concentration",
+        "plant root uptake nanoplastics trophic transfer food web",
+        "ECHA REACH restriction intentionally added microplastics EU 2023/2055",
+        "soil invertebrate microbiome earthworm toxicology"
+      ],
+      "document_ids": [
+        "mp_01_soil_accumulation",
+        "mp_02_trophic_transfer",
+        "mp_03_eu_regulations",
+        "mp_04_edge_minimal"
+      ]
+    }
+  ],
+  "documents": {
+    "ssb_01_nature_materials": {
+      "file_path": "solid_state_battery/doc_01_nature_materials.html",
+      "url": "https://mock-science.org/materials/solid-electrolyte-conductivities-breakthrough",
+      "title": "Solid Electrolyte Materials and Room-Temperature Ionic Conductivities",
+      "author": "Dr. Elena Rostova",
+      "published_date": "2025-11-14T08:00:00Z",
+      "domain": "mock-science.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "ssb_02_doe_roadmap": {
+      "file_path": "solid_state_battery/doc_02_doe_roadmap.html",
+      "url": "https://mock-energy-gov.org/reports/battery500-consortium-roadmap-2030",
+      "title": "DOE Battery500 Consortium: Energy Density and Commercial Cost Roadmaps",
+      "author": "Office of Energy Efficiency & Renewable Energy",
+      "published_date": "2025-08-22T14:30:00Z",
+      "domain": "mock-energy-gov.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "ssb_03_industry_pilot_lines": {
+      "file_path": "solid_state_battery/doc_03_industry_pilot_lines.html",
+      "url": "https://mock-tech-industrial.com/manufacturing/solid-state-pilot-line-scalability",
+      "title": "Industrial Scaling of Solid-State Batteries: Roll-to-Roll Coating and Dry Rooms",
+      "author": "Marcus Sterling",
+      "published_date": "2026-01-10T11:15:00Z",
+      "domain": "mock-tech-industrial.com",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "ssb_04_ad_heavy_duplicate": {
+      "file_path": "solid_state_battery/doc_04_ad_heavy_duplicate.html",
+      "url": "https://mock-battery-news-daily.com/reposts/quantum-solid-scaling-dry-process",
+      "title": "Battery News: Roll-to-Roll Solid-State Battery Production Insights",
+      "author": "Marcus Sterling",
+      "published_date": "2026-01-11T09:00:00Z",
+      "domain": "mock-battery-news-daily.com",
+      "expected_relevance": "high",
+      "is_distractor": false,
+      "is_duplicate_of": "ssb_03_industry_pilot_lines"
+    },
+    "ssb_05_irrelevant_solar": {
+      "file_path": "solid_state_battery/doc_05_irrelevant_solar.html",
+      "url": "https://mock-green-power.net/solar/tandem-perovskite-photovoltaic-efficiency",
+      "title": "Perovskite-Silicon Tandem Photovoltaic Cells Achieve 33% Efficiency Record",
+      "author": "Claire Chen",
+      "published_date": "2025-09-05T16:00:00Z",
+      "domain": "mock-green-power.net",
+      "expected_relevance": "none",
+      "is_distractor": true
+    },
+    "scr_01_imf_economic_outlook": {
+      "file_path": "supply_chain_reshoring/doc_01_imf_economic_outlook.html",
+      "url": "https://mock-imf-research.org/reports/geoeconomic-fragmentation-macroeconomic-costs",
+      "title": "Geoeconomic Fragmentation and Supply Chain Re-Shoring: Macroeconomic Impacts",
+      "author": "Kristalina Georgiev & Research Directorate",
+      "published_date": "2025-10-18T10:00:00Z",
+      "domain": "mock-imf-research.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "scr_02_oecd_trade_shifts": {
+      "file_path": "supply_chain_reshoring/doc_02_oecd_trade_shifts.html",
+      "url": "https://mock-oecd-monitor.org/trade/industrial-policy-subsidies-ira-chips-act",
+      "title": "Industrial Subsidies and Trade Realignment: Analyzing the IRA and EU Chips Act",
+      "author": "Pierre Dupont",
+      "published_date": "2025-12-02T13:45:00Z",
+      "domain": "mock-oecd-monitor.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "scr_03_mckinsey_manufacturing": {
+      "file_path": "supply_chain_reshoring/doc_03_mckinsey_manufacturing.html",
+      "url": "https://mock-operations-quarterly.com/logistics/nearshoring-mexico-cost-resilience-tradeoffs",
+      "title": "Nearshoring to Mexico: Labor Cost Differentials and Supply Chain Resilience",
+      "author": "Carlos Alvarez & Sandra Weiss",
+      "published_date": "2026-02-14T09:30:00Z",
+      "domain": "mock-operations-quarterly.com",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "scr_04_near_duplicate_press": {
+      "file_path": "supply_chain_reshoring/doc_04_near_duplicate_press.html",
+      "url": "https://mock-global-market-wire.com/wire/imf-warns-fragmentation-costs-reshoring",
+      "title": "Wire: IMF Warns Geoeconomic Re-Shoring Could Depress Global GDP by 1.5%",
+      "author": "Market Wire Staff",
+      "published_date": "2025-10-19T06:15:00Z",
+      "domain": "mock-global-market-wire.com",
+      "expected_relevance": "high",
+      "is_distractor": false,
+      "is_duplicate_of": "scr_01_imf_economic_outlook"
+    },
+    "scr_05_irrelevant_crypto": {
+      "file_path": "supply_chain_reshoring/doc_05_irrelevant_crypto.html",
+      "url": "https://mock-fintech-observer.org/crypto/decentralized-finance-regulatory-clarity",
+      "title": "Decentralized Finance and Cross-Border Tokenized Settlement Frameworks",
+      "author": "Satoshi Vance",
+      "published_date": "2025-07-30T15:20:00Z",
+      "domain": "mock-fintech-observer.org",
+      "expected_relevance": "none",
+      "is_distractor": true
+    },
+    "lia_01_historical_climatology": {
+      "file_path": "little_ice_age/doc_01_historical_climatology.html",
+      "url": "https://mock-climatology-history.edu/paleo/maunder-minimum-volcanic-aerosol-forcing",
+      "title": "Maunder Minimum and Volcanic Forcing: Mechanisms of the 17th Century Climate Dip",
+      "author": "Prof. Henrik Lindqvist",
+      "published_date": "2025-06-11T12:00:00Z",
+      "domain": "mock-climatology-history.edu",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "lia_02_agrarian_yield_records": {
+      "file_path": "little_ice_age/doc_02_agrarian_yield_records.html",
+      "url": "https://mock-agrarian-studies.org/famine/harvest-shortfalls-grain-shocks-1690s-europe",
+      "title": "Agrarian Yield Failures and Catastrophic Famine Cycles in 1690s Northern Europe",
+      "author": "Dr. Fiona MacIntyre",
+      "published_date": "2025-08-19T14:10:00Z",
+      "domain": "mock-agrarian-studies.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "lia_03_oxford_economic_history": {
+      "file_path": "little_ice_age/doc_03_oxford_economic_history.html",
+      "url": "https://mock-oxford-history.ac.uk/crises/the-general-crisis-of-the-seventeenth-century",
+      "title": "Climate Shocks and State Breakdown: The General Crisis of the Seventeenth Century",
+      "author": "Sir Geoffrey Parker & Oxford Colloquium",
+      "published_date": "2025-11-03T17:00:00Z",
+      "domain": "mock-oxford-history.ac.uk",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "lia_04_corrupt_malformed": {
+      "file_path": "little_ice_age/doc_04_corrupt_malformed.html",
+      "url": "https://mock-archival-scans.org/unparsed/parish-mortality-records-1695-scan",
+      "title": "Archival Parish Burial Registers and Grain Price Ledger Entries (1690-1700)",
+      "author": "Parish Clerk Archives",
+      "published_date": "2025-04-01T10:00:00Z",
+      "domain": "mock-archival-scans.org",
+      "expected_relevance": "medium",
+      "is_distractor": false,
+      "is_malformed": true
+    },
+    "mp_01_soil_accumulation": {
+      "file_path": "microplastics/doc_01_soil_accumulation.html",
+      "url": "https://mock-soil-science.org/ecotox/microplastics-agricultural-soil-sludge-accumulation",
+      "title": "Microplastic Influx into Arable Soils via Sewage Sludge and Mulch Degradation",
+      "author": "Dr. Beatrice Ramos",
+      "published_date": "2025-10-05T09:40:00Z",
+      "domain": "mock-soil-science.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "mp_02_trophic_transfer": {
+      "file_path": "microplastics/doc_02_trophic_transfer.html",
+      "url": "https://mock-bio-transfer.org/botany/sub-micron-plastic-root-uptake-edible-crops",
+      "title": "Root Uptake of Sub-Micron Plastic Particles and Trophic Transfer to Crops",
+      "author": "Prof. Kenji Takahashi",
+      "published_date": "2025-11-20T11:20:00Z",
+      "domain": "mock-bio-transfer.org",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "mp_03_eu_regulations": {
+      "file_path": "microplastics/doc_03_eu_regulations.html",
+      "url": "https://mock-eu-regulatory-gazette.eu/reach/regulation-2023-2055-microplastics-restriction",
+      "title": "Commission Regulation (EU) 2023/2055: Restriction of Intentionally Added Microplastics",
+      "author": "European Commission Directorate-General for Environment",
+      "published_date": "2025-09-28T15:00:00Z",
+      "domain": "mock-eu-regulatory-gazette.eu",
+      "expected_relevance": "high",
+      "is_distractor": false
+    },
+    "mp_04_edge_minimal": {
+      "file_path": "microplastics/doc_04_edge_minimal.html",
+      "url": "https://mock-eco-briefs.org/notes/microplastic-earthworm-mortality-baseline",
+      "title": "Brief Note: Lumbricus terrestris Exposure to High-Density Microplastics",
+      "author": "L. Jansen",
+      "published_date": "2026-01-05T08:30:00Z",
+      "domain": "mock-eco-briefs.org",
+      "expected_relevance": "medium",
+      "is_distractor": false
+    }
+  }
+}
