@@ -56,6 +56,10 @@ except ImportError:
     )
     from src.research_synthesis.pipeline import ResearchPipeline
 
+def run_server(*args, **kwargs):
+    from .server import run_server as _run_server
+    return _run_server(*args, **kwargs)
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -77,4 +81,5 @@ __all__ = [
     "BriefMetadata",
     "ResearchBrief",
     "ResearchPipeline",
+    "run_server",
 ]

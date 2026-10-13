@@ -31,6 +31,7 @@ dependencies = []
 [project.scripts]
 research-synthesis = "research_synthesis.cli:main"
 run-research = "research_synthesis.cli:main"
+research-server = "research_synthesis.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

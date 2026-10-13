@@ -62,11 +62,35 @@ python run_research.py --interactive
 python run_research.py "Global Supply Chain Reshoring" --mode=mock
 
 # Custom output directory and format
-python run_research.py "Perovskite Solar Cells" --output-dir=./reports --format=markdown
+python run_research.py "Perovskite Solar Cells" --output-dir=./reports --format=all
 
 # Disable SQLite disk cache
 python run_research.py "Little Ice Age Climate Shocks" --no-cache
 ```
+
+---
+
+## Local Web Dashboard & REST Server
+
+Launch the zero-dependency interactive Web Dashboard on `http://127.0.0.1:8080`:
+
+```bash
+# Launch server with default settings
+python run_server.py
+
+# Or via package module
+python -m research_synthesis.server --port 8080 --mode mock --open-browser
+```
+
+### Server Endpoints:
+- `GET /` — Interactive Web Dashboard (query input, real-time stage progress, embedded HTML viewer, Markdown/JSON code tabs).
+- `GET /api/health` — Health check & system status.
+- `GET /api/briefs` — List all archived briefs.
+- `GET /api/briefs/{brief_id}` — Get raw JSON schema of brief.
+- `GET /brief/{brief_id}` — Standalone rendered HTML report.
+- `GET /brief/{brief_id}/markdown` — Formatted Markdown report.
+- `POST /api/synthesize` — Trigger synthesis job (`{"topic": "...", "mode": "mock"|"live", "async": true}`).
+- `GET /api/jobs/{job_id}` — Poll background synthesis progress and stage status.
 
 ---
 
@@ -78,33 +102,36 @@ from research_synthesis.pipeline import ResearchPipeline
 # Initialize pipeline in live mode (with SQLite caching enabled)
 pipeline = ResearchPipeline(mode="live", use_cache=True)
 
-# Execute end-to-end research synthesis
-brief = pipeline.run("Next-Generation Solid-State Battery Commercialization")
+# Execute end-to-end research synthesis with progress tracking
+def on_progress(stage, total, message):
+    print(f"[{stage}/{total}] {message}")
+
+brief = pipeline.run("Next-Generation Solid-State Battery Commercialization", progress_callback=on_progress)
 
 print(f"Brief ID: {brief.brief_id}")
 print(f"Topic: {brief.topic}")
 print(f"Executive Summary:\n{brief.executive_summary}\n")
 
-# Export to Markdown
+# Multi-format exports:
 markdown_text = brief.to_markdown()
-with open("solid_state_battery.md", "w", encoding="utf-8") as f:
-    f.write(markdown_text)
+html_report = brief.to_html()
+json_dict = brief.to_dict()
 ```
 
 ---
 
 ## Verification & Test Harness
 
-Run the full unit and adversarial test suite (255 tests):
+Run the full unit and adversarial test suite (265 tests, zero deprecation warnings):
 
 ```bash
-python -m unittest discover -s tests -v
+python -W error::DeprecationWarning -m unittest discover -s tests -v
 ```
 
 Execute automated acceptance verification across benchmark domains:
 
 ```bash
-# Standard mock acceptance verification
+# Standard mock acceptance verification (strict mode)
 python verify.py --mode=mock --queries=all --strict
 
 # Live web acceptance verification

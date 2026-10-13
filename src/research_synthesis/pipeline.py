@@ -17,7 +17,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 try:
     from research_synthesis.models import (
@@ -195,11 +195,16 @@ class ResearchPipeline:
         # 9. Knowledge Synthesizer
         self.synthesizer = synthesizer or ExtractiveSynthesizer()
 
-    def run(self, topic: str) -> ResearchBrief:
+    def run(
+        self,
+        topic: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    ) -> ResearchBrief:
         """Execute end-to-end research synthesis pipeline across 11 sequential steps.
 
         Args:
             topic: Complex or broad research topic string.
+            progress_callback: Optional callable(stage: int, total: int, message: str).
 
         Returns:
             ResearchBrief: Structured, verified, citation-backed brief.
@@ -212,6 +217,9 @@ class ResearchPipeline:
             return self._build_empty_topic_brief(clean_topic, start_time)
 
         try:
+            if progress_callback:
+                progress_callback(1, 6, "Decomposing query into orthogonal research facets...")
+
             # -----------------------------------------------------------------
             # Step 1: Decompose query
             # -----------------------------------------------------------------
@@ -242,6 +250,8 @@ class ResearchPipeline:
             # -----------------------------------------------------------------
             # Step 2: Retrieve web documents
             # -----------------------------------------------------------------
+            if progress_callback:
+                progress_callback(2, 6, "Retrieving candidate web sources & literature...")
             raw_docs: List[Any] = []
             if hasattr(self.retriever, "retrieve_for_subqueries"):
                 raw_docs = self.retriever.retrieve_for_subqueries(sub_queries, limit_per_subquery=2)
@@ -264,6 +274,8 @@ class ResearchPipeline:
             # -----------------------------------------------------------------
             # Step 3: Parse documents via DocumentParser
             # -----------------------------------------------------------------
+            if progress_callback:
+                progress_callback(3, 6, "Parsing HTML boilerplate & chunking passages...")
             clean_articles: List[CleanArticle] = []
             for doc in raw_docs:
                 if isinstance(doc, CleanArticle) or (hasattr(doc, "cleaned_text") and hasattr(doc, "paragraphs")):
@@ -302,6 +314,8 @@ class ResearchPipeline:
             # -----------------------------------------------------------------
             # Step 5: Score and filter passages via BM25
             # -----------------------------------------------------------------
+            if progress_callback:
+                progress_callback(4, 6, "BM25 relevance scoring & SimHash deduplication...")
             if hasattr(self.bm25_filter, "filter_passages"):
                 filtered_passages = self.bm25_filter.filter_passages(
                     all_passages,
@@ -330,6 +344,8 @@ class ResearchPipeline:
             # -----------------------------------------------------------------
             # Step 7: Extract discrete claims via ClaimExtractor
             # -----------------------------------------------------------------
+            if progress_callback:
+                progress_callback(5, 6, "Extracting factual & quantitative claims with attribution...")
             extracted_claims = self.claim_extractor.extract_claims(deduped_passages)
 
             if not extracted_claims:
@@ -345,6 +361,8 @@ class ResearchPipeline:
             # -----------------------------------------------------------------
             # Step 9: Cluster claims via ThematicClusterer
             # -----------------------------------------------------------------
+            if progress_callback:
+                progress_callback(6, 6, "Thematic clustering & structured brief synthesis...")
             clusters = self.clusterer.cluster(
                 claims=deduped_claims,
                 sub_queries=sub_queries,
@@ -383,6 +401,9 @@ class ResearchPipeline:
             elif hasattr(brief.metadata, "__dict__"):
                 for k, v in brief_metadata.items():
                     setattr(brief.metadata, k, v)
+
+            if progress_callback:
+                progress_callback(6, 6, "Synthesis complete")
 
             return brief
 
