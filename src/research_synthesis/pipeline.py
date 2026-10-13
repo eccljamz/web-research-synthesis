@@ -42,6 +42,7 @@ try:
     from research_synthesis.retrieval.retriever import (
         BaseRetrievalClient,
         CompositeRetrievalClient,
+        LiveHttpRetrievalClient,
         MockWebRetrievalClient,
     )
     from research_synthesis.extraction.chunker import PassageChunker
@@ -74,6 +75,7 @@ except ImportError:
         from src.research_synthesis.retrieval.retriever import (
             BaseRetrievalClient,
             CompositeRetrievalClient,
+            LiveHttpRetrievalClient,
             MockWebRetrievalClient,
         )
         from src.research_synthesis.extraction.chunker import PassageChunker
@@ -105,6 +107,7 @@ except ImportError:
         from .retrieval.retriever import (
             BaseRetrievalClient,
             CompositeRetrievalClient,
+            LiveHttpRetrievalClient,
             MockWebRetrievalClient,
         )
         from .extraction.chunker import PassageChunker
