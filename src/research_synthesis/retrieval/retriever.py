@@ -7,6 +7,7 @@ backoff and rate limiting, and seamless failover via CompositeRetrievalClient.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -614,6 +616,292 @@ class WikipediaRetrievalClient(BaseRetrievalClient):
         return self.fetcher.fetch_url(url, timeout=timeout)
 
 
+class ArxivRetrievalClient(BaseRetrievalClient):
+    """Academic literature retrieval client querying the arXiv Atom API (export.arxiv.org).
+
+    Uses standard library urllib.request and xml.etree.ElementTree to query arXiv Atom feeds,
+    extracting publication titles, authors, publication dates, and paper abstracts.
+    """
+
+    API_URL = "https://export.arxiv.org/api/query"
+    ATOM_NS = "{http://www.w3.org/2005/Atom}"
+    DEFAULT_USER_AGENT = "AutonomousResearchBot/1.0 (academic-research; mailto:research@example.org)"
+
+    def __init__(
+        self,
+        user_agent: Optional[str] = None,
+        timeout: float = 10.0,
+        cache: Optional[Any] = None,
+    ):
+        self.user_agent = user_agent or self.DEFAULT_USER_AGENT
+        self.timeout = timeout
+        self.cache = cache
+        self.fetcher = LiveHttpRetrievalClient(user_agent=self.user_agent)
+        self._entry_cache: Dict[str, Dict[str, Any]] = {}
+
+    def can_handle(self, url: str) -> bool:
+        """Check if URL is an arXiv paper or cached by this client."""
+        return "arxiv.org" in url.lower() or url in self._entry_cache
+
+    def _find_text(self, elem: Any, tag_name: str) -> str:
+        for child in elem:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag.lower() == tag_name.lower():
+                return (child.text or "").strip()
+        return ""
+
+    def search(self, query: str, limit: int = 3) -> List[str]:
+        """Query arXiv Atom API and return paper URLs."""
+        if self.cache and hasattr(self.cache, "get_search"):
+            cached_urls = self.cache.get_search(f"arxiv:{query}")
+            if cached_urls:
+                return cached_urls[:limit]
+
+        safe_query = re.sub(r"[^\w\s-]", " ", query).strip()
+        search_terms = " AND ".join(safe_query.split()) if safe_query else "all"
+        params = {
+            "search_query": f"all:{search_terms}",
+            "start": "0",
+            "max_results": str(max(1, limit)),
+        }
+        url = f"{self.API_URL}?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "application/atom+xml,application/xml,text/xml",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                xml_data = resp.read()
+
+            root = ET.fromstring(xml_data)
+            urls: List[str] = []
+
+            for child in root:
+                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if tag.lower() != "entry":
+                    continue
+
+                entry_id = self._find_text(child, "id")
+                title = re.sub(r"\s+", " ", self._find_text(child, "title")).strip() or "Untitled arXiv Paper"
+                summary = re.sub(r"\s+", " ", self._find_text(child, "summary")).strip()
+                published = self._find_text(child, "published")
+                if published and "T" in published:
+                    published = published.split("T")[0]
+
+                authors: List[str] = []
+                for sub in child:
+                    sub_tag = sub.tag.split("}")[-1] if "}" in sub.tag else sub.tag
+                    if sub_tag.lower() == "author":
+                        name = self._find_text(sub, "name")
+                        if name:
+                            authors.append(name)
+
+                # Locate canonical abstract or alternate link
+                paper_url = ""
+                for link in child:
+                    l_tag = link.tag.split("}")[-1] if "}" in link.tag else link.tag
+                    if l_tag.lower() == "link":
+                        if link.get("rel") == "alternate" and link.get("href"):
+                            paper_url = link.get("href")
+                            break
+                        if not paper_url and link.get("href", "").startswith("http"):
+                            paper_url = link.get("href")
+
+                if not paper_url:
+                    paper_url = entry_id
+
+                if paper_url:
+                    urls.append(paper_url)
+                    self._entry_cache[paper_url] = {
+                        "url": paper_url,
+                        "title": title,
+                        "authors": ", ".join(authors) if authors else "arXiv Contributor",
+                        "published_date": published,
+                        "summary": summary,
+                    }
+
+                if len(urls) >= limit:
+                    break
+
+            if urls and self.cache and hasattr(self.cache, "put_search"):
+                self.cache.put_search(f"arxiv:{query}", urls)
+
+            return urls
+        except Exception as e:
+            logger.debug(f"arXiv search failed: {e}")
+            return []
+
+    def fetch_url(self, url: str, timeout: float = 8.0) -> RawWebDocument:
+        """Fetch paper abstract and metadata as structured HTML document."""
+        entry = self._entry_cache.get(url)
+        if entry:
+            title = entry.get("title", "arXiv Paper")
+            authors = entry.get("authors", "")
+            date_str = entry.get("published_date", "")
+            summary = entry.get("summary", "")
+            raw_html = (
+                f"<!DOCTYPE html>\n"
+                f"<html lang=\"en\"><head>\n"
+                f"<title>{html.escape(title)}</title>\n"
+                f'<meta name="author" content="{html.escape(authors)}">\n'
+                f'<meta property="article:published_time" content="{html.escape(date_str)}">\n'
+                f'<link rel="canonical" href="{html.escape(url)}">\n'
+                f"</head><body><main>\n"
+                f"<h1>{html.escape(title)}</h1>\n"
+                f'<div class="byline">By {html.escape(authors)} on {html.escape(date_str)}</div>\n'
+                f'<div class="abstract"><p>{html.escape(summary)}</p></div>\n'
+                f"</main></body></html>"
+            )
+            return RawWebDocument(
+                url=url,
+                status_code=200,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                raw_html=raw_html,
+            )
+
+        return self.fetcher.fetch_url(url, timeout=timeout)
+
+
+class PubMedRetrievalClient(BaseRetrievalClient):
+    """Biomedical and life sciences literature client querying NCBI E-utilities (PubMed).
+
+    Uses standard library urllib.request and json to query:
+    1. esearch.fcgi to retrieve PMIDs
+    2. esummary.fcgi to retrieve structured article metadata
+    """
+
+    ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    DEFAULT_USER_AGENT = "AutonomousResearchBot/1.0 (biomedical-research; mailto:research@example.org)"
+
+    def __init__(
+        self,
+        user_agent: Optional[str] = None,
+        timeout: float = 10.0,
+        cache: Optional[Any] = None,
+    ):
+        self.user_agent = user_agent or self.DEFAULT_USER_AGENT
+        self.timeout = timeout
+        self.cache = cache
+        self.fetcher = LiveHttpRetrievalClient(user_agent=self.user_agent)
+        self._entry_cache: Dict[str, Dict[str, Any]] = {}
+
+    def can_handle(self, url: str) -> bool:
+        """Check if URL is a PubMed article or cached by this client."""
+        return "pubmed.ncbi.nlm.nih.gov" in url.lower() or url in self._entry_cache
+
+    def search(self, query: str, limit: int = 3) -> List[str]:
+        """Query NCBI ESearch + ESummary for PubMed articles."""
+        if self.cache and hasattr(self.cache, "get_search"):
+            cached_urls = self.cache.get_search(f"pubmed:{query}")
+            if cached_urls:
+                return cached_urls[:limit]
+
+        # Step 1: ESearch to get PMIDs
+        search_params = {
+            "db": "pubmed",
+            "term": query,
+            "retmode": "json",
+            "retmax": str(max(1, limit)),
+        }
+        esearch_url = f"{self.ESEARCH_URL}?{urllib.parse.urlencode(search_params)}"
+        req = urllib.request.Request(esearch_url, headers={"User-Agent": self.user_agent})
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                search_data = json.loads(resp.read().decode("utf-8"))
+
+            id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            if not id_list:
+                return []
+
+            # Step 2: ESummary to get article summaries
+            summary_params = {
+                "db": "pubmed",
+                "id": ",".join(id_list),
+                "retmode": "json",
+            }
+            esummary_url = f"{self.ESUMMARY_URL}?{urllib.parse.urlencode(summary_params)}"
+            req_sum = urllib.request.Request(esummary_url, headers={"User-Agent": self.user_agent})
+
+            with urllib.request.urlopen(req_sum, timeout=self.timeout) as resp_sum:
+                sum_data = json.loads(resp_sum.read().decode("utf-8"))
+
+            results_dict = sum_data.get("result", {})
+            urls: List[str] = []
+
+            for pmid in id_list:
+                item = results_dict.get(pmid)
+                if not item:
+                    continue
+                url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+                title = item.get("title", f"PubMed Article {pmid}")
+                pubdate = item.get("pubdate", "")
+                source = item.get("source", "")
+                authors_list = [
+                    a.get("name", "")
+                    for a in item.get("authors", [])
+                    if isinstance(a, dict) and a.get("name")
+                ]
+                authors_str = ", ".join(authors_list) if authors_list else "PubMed Contributor"
+
+                urls.append(url)
+                self._entry_cache[url] = {
+                    "url": url,
+                    "title": title,
+                    "authors": authors_str,
+                    "published_date": pubdate,
+                    "source": source,
+                    "summary": f"{title}. Published in {source} ({pubdate}).",
+                }
+
+                if len(urls) >= limit:
+                    break
+
+            if urls and self.cache and hasattr(self.cache, "put_search"):
+                self.cache.put_search(f"pubmed:{query}", urls)
+
+            return urls
+        except Exception as e:
+            logger.debug(f"PubMed search failed: {e}")
+            return []
+
+    def fetch_url(self, url: str, timeout: float = 8.0) -> RawWebDocument:
+        """Fetch article abstract and metadata as structured HTML document."""
+        entry = self._entry_cache.get(url)
+        if entry:
+            title = entry.get("title", "PubMed Article")
+            authors = entry.get("authors", "")
+            date_str = entry.get("published_date", "")
+            summary = entry.get("summary", "")
+            source = entry.get("source", "")
+            raw_html = (
+                f"<!DOCTYPE html>\n"
+                f"<html lang=\"en\"><head>\n"
+                f"<title>{html.escape(title)}</title>\n"
+                f'<meta name="author" content="{html.escape(authors)}">\n'
+                f'<meta property="article:published_time" content="{html.escape(date_str)}">\n'
+                f'<link rel="canonical" href="{html.escape(url)}">\n'
+                f"</head><body><main>\n"
+                f"<h1>{html.escape(title)}</h1>\n"
+                f'<div class="byline">By {html.escape(authors)} on {html.escape(date_str)} | {html.escape(source)}</div>\n'
+                f'<div class="abstract"><p>{html.escape(summary)}</p></div>\n'
+                f"</main></body></html>"
+            )
+            return RawWebDocument(
+                url=url,
+                status_code=200,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                raw_html=raw_html,
+            )
+
+        return self.fetcher.fetch_url(url, timeout=timeout)
+
+
 # ============================================================================
 # Composite Failover Retrieval Client
 # ============================================================================
@@ -634,6 +922,8 @@ class CompositeRetrievalClient(BaseRetrievalClient):
             fallback_clients
             if fallback_clients is not None
             else [
+                ArxivRetrievalClient(),
+                PubMedRetrievalClient(),
                 DuckDuckGoLiteRetrievalClient(),
                 WikipediaRetrievalClient(),
             ]
@@ -665,6 +955,16 @@ class CompositeRetrievalClient(BaseRetrievalClient):
     def fetch_url(self, url: str, timeout: float = 8.0) -> RawWebDocument:
         """Fetch URL, attempting live first and falling back to mock upon failure."""
         if not self.offline_mode:
+            # First check if any fallback client can handle this specific URL or has it cached
+            for fb in self.fallback_clients:
+                if hasattr(fb, "can_handle") and fb.can_handle(url):
+                    try:
+                        doc = fb.fetch_url(url, timeout=timeout)
+                        if not doc.error and doc.raw_html:
+                            return doc
+                    except Exception as fb_err:
+                        logger.debug(f"Specialized client fetch failed for {url}: {fb_err}")
+
             try:
                 doc = self.live_client.fetch_url(url, timeout=timeout)
                 if not doc.error and doc.raw_html:

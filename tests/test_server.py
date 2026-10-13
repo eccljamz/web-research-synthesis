@@ -241,6 +241,20 @@ class TestResearchServerEndpoints(unittest.TestCase):
         self.assertIn("text/markdown", m_headers.get("Content-Type", ""))
         self.assertIn("# Research Brief:", m_body.decode("utf-8"))
 
+        # Rendered Obsidian Note
+        o_status, o_body, o_headers = self._http_get(f"/brief/{brief_id}/obsidian")
+        self.assertEqual(o_status, 200)
+        self.assertIn("text/markdown", o_headers.get("Content-Type", ""))
+        self.assertIn("> [!summary] Executive Summary", o_body.decode("utf-8"))
+
+        # Obsidian Vault Manifest
+        v_status, v_body, _ = self._http_get(f"/brief/{brief_id}/obsidian-vault")
+        self.assertEqual(v_status, 200)
+        vault_data = json.loads(v_body.decode("utf-8"))
+        self.assertIn("files", vault_data)
+        self.assertIn("Index.md", vault_data["files"])
+        self.assertIn("Knowledge_Graph.canvas", vault_data["files"])
+
     def test_synthesize_async_and_poll_status(self):
         """Test async synthesis, poll job until completed, and verify progress tracking."""
         topic = "Global Supply Chain Re-Shoring Dynamics"

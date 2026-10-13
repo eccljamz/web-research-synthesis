@@ -952,6 +952,33 @@ class ResearchServerHandler(BaseHTTPRequestHandler):
                 self._send_text(HTTPStatus.NOT_FOUND, f"# 404 Not Found\n\nBrief '{b_id}' was not found.", "text/markdown; charset=utf-8")
             return
 
+        # 8. Rendered Obsidian Single Note: /brief/{brief_id}/obsidian
+        obs_match = re.match(r"^/brief/([a-zA-Z0-9_\-]+)/obsidian$", path)
+        if obs_match:
+            b_id = obs_match.group(1)
+            brief = self.server_state.get_brief(b_id)
+            if brief:
+                self._send_text(HTTPStatus.OK, brief.to_obsidian(), "text/markdown; charset=utf-8")
+            else:
+                self._send_text(HTTPStatus.NOT_FOUND, f"# 404 Not Found\n\nBrief '{b_id}' was not found.", "text/markdown; charset=utf-8")
+            return
+
+        # 9. Obsidian Vault Manifest & Files: /brief/{brief_id}/obsidian-vault
+        vault_match = re.match(r"^/brief/([a-zA-Z0-9_\-]+)/obsidian-vault$", path)
+        if vault_match:
+            b_id = vault_match.group(1)
+            brief = self.server_state.get_brief(b_id)
+            if brief:
+                try:
+                    from research_synthesis.synthesis.formatters import ObsidianExporter
+                except ImportError:
+                    from src.research_synthesis.synthesis.formatters import ObsidianExporter
+                vault_files = ObsidianExporter.format_vault(brief)
+                self._send_json(HTTPStatus.OK, {"brief_id": b_id, "files": vault_files})
+            else:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Brief '{b_id}' not found"})
+            return
+
         # Not Found Fallback
         self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Endpoint '{self.path}' not found"})
 

@@ -34,6 +34,12 @@ try:
         ThematicSection,
     )
     from research_synthesis.pipeline import ResearchPipeline
+    from research_synthesis.synthesis.formatters import (
+        HTMLReportFormatter,
+        JSONSchemaSerializer,
+        MarkdownFormatter,
+        ObsidianExporter,
+    )
 except ImportError:
     from src.research_synthesis.models import (
         BriefMetadata,
@@ -55,6 +61,12 @@ except ImportError:
         ThematicSection,
     )
     from src.research_synthesis.pipeline import ResearchPipeline
+    from src.research_synthesis.synthesis.formatters import (
+        HTMLReportFormatter,
+        JSONSchemaSerializer,
+        MarkdownFormatter,
+        ObsidianExporter,
+    )
 
 def run_server(*args, **kwargs):
     from .server import run_server as _run_server
@@ -81,5 +93,9 @@ __all__ = [
     "BriefMetadata",
     "ResearchBrief",
     "ResearchPipeline",
+    "MarkdownFormatter",
+    "JSONSchemaSerializer",
+    "HTMLReportFormatter",
+    "ObsidianExporter",
     "run_server",
 ]

@@ -21,6 +21,7 @@ test_reports/
 # Cache and local runtime outputs
 .cache/
 output/
+reports/
 *.db
 *.db-journal
 *.db-wal

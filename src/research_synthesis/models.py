@@ -801,6 +801,30 @@ class ResearchBrief:
             except ImportError:
                 return f"<html><body><h1>{self.topic}</h1><p>{self.executive_summary}</p></body></html>"
 
+    def to_obsidian(self) -> str:
+        """Render brief into a single Obsidian markdown document with callouts and YAML frontmatter."""
+        try:
+            from research_synthesis.synthesis.formatters import ObsidianExporter
+            return ObsidianExporter.format_single_note(self)
+        except ImportError:
+            try:
+                from src.research_synthesis.synthesis.formatters import ObsidianExporter
+                return ObsidianExporter.format_single_note(self)
+            except ImportError:
+                return self.to_markdown()
+
+    def export_obsidian_vault(self, target_dir: Union[str, Any]) -> List[Any]:
+        """Export multi-note atomic Obsidian knowledge graph vault to directory."""
+        try:
+            from research_synthesis.synthesis.formatters import ObsidianExporter
+            return ObsidianExporter.export_to_directory(self, target_dir)
+        except ImportError:
+            try:
+                from src.research_synthesis.synthesis.formatters import ObsidianExporter
+                return ObsidianExporter.export_to_directory(self, target_dir)
+            except ImportError:
+                return []
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> ResearchBrief:
         """Deserialize research brief from dictionary."""

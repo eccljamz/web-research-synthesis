@@ -101,6 +101,8 @@ def run_single_research(
         md_file = out_path / f"{slug}.md"
         json_file = out_path / f"{slug}.json"
         html_file = out_path / f"{slug}.html"
+        obsidian_note_file = out_path / f"{slug}_obsidian.md"
+        obsidian_vault_dir = out_path / f"{slug}_vault"
 
         # Export requested formats
         if export_format in ("markdown", "both", "all"):
@@ -111,6 +113,10 @@ def run_single_research(
 
         if export_format in ("html", "both", "all"):
             html_file.write_text(brief.to_html(), encoding="utf-8")
+
+        if export_format in ("obsidian", "all"):
+            obsidian_note_file.write_text(brief.to_obsidian(), encoding="utf-8")
+            brief.export_obsidian_vault(obsidian_vault_dir)
 
         if not quiet:
             print(f"\n{GREEN}{BOLD}[DONE] SYNTHESIS COMPLETE ({elapsed:.2f}s){RESET}")
@@ -129,11 +135,14 @@ def run_single_research(
 
             print(f"\n{BOLD}Exported Artifacts:{RESET}")
             if export_format in ("markdown", "both", "all"):
-                print(f"  - Markdown: {md_file.resolve()}")
+                print(f"  - Markdown:       {md_file.resolve()}")
             if export_format in ("json", "both", "all"):
-                print(f"  - JSON:     {json_file.resolve()}")
+                print(f"  - JSON:           {json_file.resolve()}")
             if export_format in ("html", "both", "all"):
-                print(f"  - HTML:     {html_file.resolve()}")
+                print(f"  - HTML:           {html_file.resolve()}")
+            if export_format in ("obsidian", "all"):
+                print(f"  - Obsidian Note:  {obsidian_note_file.resolve()}")
+                print(f"  - Obsidian Vault: {obsidian_vault_dir.resolve()}")
             print(f"{CYAN}================================================================================{RESET}")
 
         return brief
@@ -222,9 +231,9 @@ Examples:
     )
     parser.add_argument(
         "-f", "--format",
-        choices=["markdown", "json", "html", "both", "all"],
+        choices=["markdown", "json", "html", "obsidian", "both", "all"],
         default="all",
-        help="Output export format (default: all - markdown, json, html)",
+        help="Output export format (default: all - markdown, json, html, obsidian)",
     )
     parser.add_argument(
         "--no-cache",

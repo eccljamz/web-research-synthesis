@@ -11,8 +11,11 @@ Renders and serializes ResearchBrief objects into:
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 try:
@@ -550,8 +553,341 @@ class HTMLReportFormatter:
 """
 
 
+
+# ============================================================================
+# Obsidian & PKM Knowledge Graph Exporter
+# ============================================================================
+
+class ObsidianExporter:
+    """Exports ResearchBrief into PKM (Personal Knowledge Management) and Obsidian vault formats.
+
+    Supports:
+    1. format_single_note: Self-contained Obsidian Markdown document with YAML frontmatter and callouts.
+    2. format_vault: Multi-file knowledge graph mapping atomic sections, sources, and visual canvas.
+    3. export_to_directory: Physical vault generation with directory hierarchies and UTF-8 encoding.
+    """
+
+    @classmethod
+    def _slugify(cls, text: str, max_len: int = 40) -> str:
+        clean = re.sub(r"[^\w\s-]", "", text.lower()).strip()
+        slug = re.sub(r"[\s-]+", "_", clean)
+        return slug[:max_len] or "item"
+
+    @classmethod
+    def _yaml_escape(cls, text: str) -> str:
+        escaped = text.replace('"', '\\"').replace("\n", " ").strip()
+        return f'"{escaped}"'
+
+    @classmethod
+    def _linkify_wikilinks(cls, text: str) -> str:
+        """Replace inline [N] citations with Obsidian wikilinks [[Sources/Source_N|[N]]]."""
+        return re.sub(r"\[(\d+)\]", r"[[Sources/Source_\1|[\1]]]", text)
+
+    @classmethod
+    def format_single_note(cls, brief: ResearchBrief) -> str:
+        """Render brief into a single Obsidian-optimized Markdown document."""
+        lines: List[str] = []
+        topic_tag = re.sub(r"[^\w-]", "", brief.topic.lower().replace(" ", "-"))
+
+        # YAML Frontmatter
+        lines.append("---")
+        lines.append(f"title: {cls._yaml_escape(brief.topic)}")
+        lines.append(f"brief_id: {cls._yaml_escape(brief.brief_id)}")
+        lines.append('type: "research-brief"')
+        lines.append("tags:")
+        lines.append("  - research")
+        lines.append("  - synthesis")
+        if topic_tag:
+            lines.append(f"  - {topic_tag}")
+        lines.append(f"created: {cls._yaml_escape(brief.generated_at)}")
+        lines.append(f"sources_count: {len(brief.sources)}")
+        lines.append("---")
+        lines.append("")
+        lines.append(f"# {brief.topic}")
+        lines.append("")
+
+        # Executive Summary Callout
+        lines.append("> [!summary] Executive Summary")
+        for p in brief.executive_summary.strip().split("\n\n"):
+            clean_p = p.strip().replace("\n", " ")
+            lines.append(f"> {clean_p}")
+        lines.append("")
+
+        # Key Takeaways Callout
+        if brief.key_takeaways:
+            lines.append("> [!tip] Key Takeaways")
+            for kt in brief.key_takeaways:
+                kt_text = getattr(kt, "text", str(kt)).strip()
+                lines.append(f"> - {kt_text}")
+            lines.append("")
+
+        # Thematic Sections
+        if brief.thematic_sections:
+            lines.append("## Thematic Analysis")
+            lines.append("")
+            for idx, sec in enumerate(brief.thematic_sections, 1):
+                lines.append(f"### {idx}. {sec.title}")
+                lines.append("")
+                lines.append(sec.narrative.strip())
+                lines.append("")
+                if sec.key_findings:
+                    lines.append("**Key Findings**:")
+                    for finding in sec.key_findings:
+                        lines.append(f"- {finding.strip()}")
+                    lines.append("")
+
+                discs = getattr(sec, "discrepancies", [])
+                if discs:
+                    lines.append("> [!warning] Conflicting Claims & Data Variances")
+                    lines.append("> | Metric / Entity | Conflict Type | Claim A | Claim B | Analysis |")
+                    lines.append("> | :--- | :--- | :--- | :--- | :--- |")
+                    for d in discs:
+                        ent = getattr(d, "entity", "") or (d.get("entity", "") if isinstance(d, dict) else "")
+                        dtype = getattr(d, "discrepancy_type", "") or (d.get("discrepancy_type", "") if isinstance(d, dict) else "")
+                        txt_a = getattr(d, "claim_a_text", "") or (d.get("claim_a_text", "") if isinstance(d, dict) else "")
+                        txt_b = getattr(d, "claim_b_text", "") or (d.get("claim_b_text", "") if isinstance(d, dict) else "")
+                        expl = getattr(d, "explanation", "") or (d.get("explanation", "") if isinstance(d, dict) else "")
+                        lines.append(
+                            f"> | {str(ent).replace('|', '/')} | `{str(dtype).replace('|', '/')}` | "
+                            f"{str(txt_a).replace('|', '/')} | {str(txt_b).replace('|', '/')} | {str(expl).replace('|', '/')} |"
+                        )
+                    lines.append("")
+
+        # Sources Bibliography
+        if brief.sources:
+            lines.append("## Sources & Citations")
+            lines.append("")
+            for src in brief.sources:
+                author_str = f" by {src.author}" if src.author else ""
+                date_str = f" ({src.publish_date})" if src.publish_date else ""
+                lines.append(f"- [{src.citation_index}] **[{src.title}]({src.url})**{author_str}{date_str} ^src-{src.citation_index}")
+                if src.snippet:
+                    lines.append(f"  > \"{src.snippet}\"")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    @classmethod
+    def format_vault(cls, brief: ResearchBrief) -> Dict[str, str]:
+        """Generate multi-note Obsidian vault representation with atomic notes and canvas graph."""
+        files: Dict[str, str] = {}
+        topic_slug = cls._slugify(brief.topic, 40)
+        topic_tag = re.sub(r"[^\w-]", "", brief.topic.lower().replace(" ", "-"))
+
+        # 1. Index Note (Overview)
+        index_lines: List[str] = [
+            "---",
+            f"title: {cls._yaml_escape(brief.topic)}",
+            f"brief_id: {cls._yaml_escape(brief.brief_id)}",
+            'type: "research-index"',
+            "tags:",
+            "  - research",
+            "  - index",
+        ]
+        if topic_tag:
+            index_lines.append(f"  - {topic_tag}")
+        index_lines.extend([
+            f"created: {cls._yaml_escape(brief.generated_at)}",
+            f"sections_count: {len(brief.thematic_sections)}",
+            f"sources_count: {len(brief.sources)}",
+            "---",
+            "",
+            f"# {brief.topic}",
+            "",
+            "> [!summary] Executive Summary",
+        ])
+        for p in brief.executive_summary.strip().split("\n\n"):
+            clean_p = cls._linkify_wikilinks(p.strip().replace("\n", " "))
+            index_lines.append(f"> {clean_p}")
+        index_lines.append("")
+
+        if brief.key_takeaways:
+            index_lines.append("> [!tip] Key Takeaways")
+            for kt in brief.key_takeaways:
+                kt_text = cls._linkify_wikilinks(getattr(kt, "text", str(kt)).strip())
+                index_lines.append(f"> - {kt_text}")
+            index_lines.append("")
+
+        index_lines.append("## Table of Contents")
+        index_lines.append("")
+        for idx, sec in enumerate(brief.thematic_sections, 1):
+            sec_slug = cls._slugify(sec.title, 35)
+            sec_rel = f"Sections/{idx:02d}_{sec_slug}"
+            index_lines.append(f"- [[{sec_rel}|{idx}. {sec.title}]]")
+        index_lines.append("")
+
+        index_lines.append("## References & Sources")
+        index_lines.append("")
+        for src in brief.sources:
+            src_slug = cls._slugify(src.title, 30)
+            src_rel = f"Sources/Source_{src.citation_index}_{src_slug}"
+            author_str = f" ({src.author})" if src.author else ""
+            index_lines.append(f"- [[{src_rel}|[{src.citation_index}] {src.title}]]{author_str}")
+        index_lines.append("")
+
+        files["Index.md"] = "\n".join(index_lines)
+
+        # 2. Atomic Thematic Section Notes
+        canvas_nodes = [
+            {"id": "node_index", "type": "file", "file": "Index.md", "x": 0, "y": 0, "width": 400, "height": 300}
+        ]
+        canvas_edges = []
+
+        for idx, sec in enumerate(brief.thematic_sections, 1):
+            sec_slug = cls._slugify(sec.title, 35)
+            filename = f"Sections/{idx:02d}_{sec_slug}.md"
+            node_id = f"node_sec_{idx}"
+            canvas_nodes.append({
+                "id": node_id,
+                "type": "file",
+                "file": filename,
+                "x": 500,
+                "y": (idx - 1) * 350,
+                "width": 380,
+                "height": 280,
+            })
+            canvas_edges.append({
+                "id": f"edge_index_sec_{idx}",
+                "fromNode": "node_index",
+                "toNode": node_id,
+            })
+
+            sec_lines = [
+                "---",
+                f"title: {cls._yaml_escape(sec.title)}",
+                'parent: "[[Index]]"',
+                'type: "research-section"',
+                f"section_index: {idx}",
+                "tags:",
+                "  - research",
+                "  - section",
+            ]
+            if topic_tag:
+                sec_lines.append(f"  - {topic_tag}")
+            sec_lines.extend([
+                "---",
+                "",
+                "[[Index|Back to Research Brief Overview]]",
+                "",
+                f"# {idx}. {sec.title}",
+                "",
+                cls._linkify_wikilinks(sec.narrative.strip()),
+                "",
+            ])
+
+            if sec.key_findings:
+                sec_lines.append("## Key Findings")
+                sec_lines.append("")
+                for f in sec.key_findings:
+                    sec_lines.append(f"- {cls._linkify_wikilinks(f.strip())}")
+                sec_lines.append("")
+
+            discs = getattr(sec, "discrepancies", [])
+            if discs:
+                sec_lines.append("## Conflicting Claims & Data Variances")
+                sec_lines.append("")
+                sec_lines.append("| Metric / Entity | Conflict Type | Claim A | Claim B | Analysis |")
+                sec_lines.append("| :--- | :--- | :--- | :--- | :--- |")
+                for d in discs:
+                    ent = getattr(d, "entity", "") or (d.get("entity", "") if isinstance(d, dict) else "")
+                    dtype = getattr(d, "discrepancy_type", "") or (d.get("discrepancy_type", "") if isinstance(d, dict) else "")
+                    txt_a = getattr(d, "claim_a_text", "") or (d.get("claim_a_text", "") if isinstance(d, dict) else "")
+                    txt_b = getattr(d, "claim_b_text", "") or (d.get("claim_b_text", "") if isinstance(d, dict) else "")
+                    expl = getattr(d, "explanation", "") or (d.get("explanation", "") if isinstance(d, dict) else "")
+                    sec_lines.append(
+                        f"| {str(ent).replace('|', '/')} | `{str(dtype).replace('|', '/')}` | "
+                        f"{str(txt_a).replace('|', '/')} | {str(txt_b).replace('|', '/')} | {str(expl).replace('|', '/')} |"
+                    )
+                sec_lines.append("")
+
+            files[filename] = "\n".join(sec_lines)
+
+        # 3. Source Bibliography Notes
+        for src in brief.sources:
+            src_slug = cls._slugify(src.title, 30)
+            filename = f"Sources/Source_{src.citation_index}_{src_slug}.md"
+            node_id = f"node_src_{src.citation_index}"
+            canvas_nodes.append({
+                "id": node_id,
+                "type": "file",
+                "file": filename,
+                "x": 1000,
+                "y": (src.citation_index - 1) * 250,
+                "width": 360,
+                "height": 220,
+            })
+            canvas_edges.append({
+                "id": f"edge_src_{src.citation_index}",
+                "fromNode": "node_index",
+                "toNode": node_id,
+            })
+
+            src_lines = [
+                "---",
+                f"title: {cls._yaml_escape(src.title)}",
+                'parent: "[[Index]]"',
+                'type: "research-source"',
+                f"citation_index: {src.citation_index}",
+                f"url: {cls._yaml_escape(src.url)}",
+                f"author: {cls._yaml_escape(src.author or 'Unknown')}",
+                f"publish_date: {cls._yaml_escape(src.publish_date or 'Unknown')}",
+                "tags:",
+                "  - research",
+                "  - source",
+            ]
+            if topic_tag:
+                src_lines.append(f"  - {topic_tag}")
+            src_lines.extend([
+                "---",
+                "",
+                "[[Index|Back to Research Brief Overview]]",
+                "",
+                f"# Source [{src.citation_index}]: {src.title}",
+                "",
+                f"- **URL**: [{src.url}]({src.url})",
+                f"- **Author**: {src.author or 'Unknown'}",
+                f"- **Publication Date**: {src.publish_date or 'Unknown'}",
+                "",
+            ])
+            if src.snippet:
+                src_lines.append("## Extracted Excerpt")
+                src_lines.append("")
+                src_lines.append("> [!quote] Evidence Context")
+                for snip_p in src.snippet.strip().split("\n\n"):
+                    src_lines.append(f"> {snip_p.strip()}")
+                src_lines.append("")
+
+            files[filename] = "\n".join(src_lines)
+
+        # 4. Obsidian Visual Canvas (.canvas)
+        canvas_data = {
+            "nodes": canvas_nodes,
+            "edges": canvas_edges,
+        }
+        files["Knowledge_Graph.canvas"] = json.dumps(canvas_data, indent=2)
+
+        return files
+
+    @classmethod
+    def export_to_directory(cls, brief: ResearchBrief, target_dir: Union[str, Path]) -> List[Path]:
+        """Export full PKM Obsidian vault to physical filesystem directory."""
+        base_dir = Path(target_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        written_paths: List[Path] = []
+
+        vault_files = cls.format_vault(brief)
+        for rel_path, content in vault_files.items():
+            dest_file = base_dir / rel_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            dest_file.write_text(content, encoding="utf-8")
+            written_paths.append(dest_file)
+
+        return written_paths
+
+
 __all__ = [
     "MarkdownFormatter",
     "JSONSchemaSerializer",
     "HTMLReportFormatter",
+    "ObsidianExporter",
 ]
