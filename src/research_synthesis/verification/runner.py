@@ -114,6 +114,14 @@ class VerificationRunner:
                 with open(md_path, "w", encoding="utf-8") as f:
                     f.write(md_content)
 
+            # Save html artifact alongside markdown and json
+            if hasattr(brief_obj, "to_html"):
+                html_content = brief_obj.to_html()
+                if html_content:
+                    html_path = self.output_dir / f"{query_id}.html"
+                    with open(html_path, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+
             return brief_dict, json_content, None
         except ImportError:
             # Pipeline is not yet implemented by worker agents

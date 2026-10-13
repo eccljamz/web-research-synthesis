@@ -358,6 +358,75 @@ class ExtractiveSynthesizer:
                 clean_finding += "."
             key_findings.append(f"{clean_finding} {cite_str}")
 
+        # Ground and articulate any detected discrepancies
+        claims_by_id = {c.claim_id: c for c in cluster_claims}
+        disc_sentences: List[str] = []
+        for disc in discrepancies:
+            d_ent = getattr(disc, "entity", "") or (disc.get("entity", "") if isinstance(disc, dict) else "") or "metrics"
+            d_type = getattr(disc, "discrepancy_type", "") or (disc.get("discrepancy_type", "") if isinstance(disc, dict) else "") or "VARIATION"
+            d_expl = getattr(disc, "explanation", "") or (disc.get("explanation", "") if isinstance(disc, dict) else "")
+            c_a_id = getattr(disc, "claim_a_id", "") or (disc.get("claim_a_id", "") if isinstance(disc, dict) else "")
+            c_b_id = getattr(disc, "claim_b_id", "") or (disc.get("claim_b_id", "") if isinstance(disc, dict) else "")
+            txt_a = getattr(disc, "claim_a_text", "") or (disc.get("claim_a_text", "") if isinstance(disc, dict) else "")
+            txt_b = getattr(disc, "claim_b_text", "") or (disc.get("claim_b_text", "") if isinstance(disc, dict) else "")
+            src_a = getattr(disc, "source_a_url", "") or (disc.get("source_a_url", "") if isinstance(disc, dict) else "")
+            src_b = getattr(disc, "source_b_url", "") or (disc.get("source_b_url", "") if isinstance(disc, dict) else "")
+
+            claim_a = claims_by_id.get(c_a_id)
+            if not claim_a and src_a:
+                claim_a = ExtractedClaim(
+                    claim_id=c_a_id or "clm-disc-a",
+                    text=txt_a or f"Empirical claim regarding {d_ent}",
+                    source_doc_id="doc-disc-a",
+                    source_url=src_a,
+                    source_title=f"Source on {d_ent}",
+                    passage_snippet=txt_a,
+                )
+            claim_b = claims_by_id.get(c_b_id)
+            if not claim_b and src_b:
+                claim_b = ExtractedClaim(
+                    claim_id=c_b_id or "clm-disc-b",
+                    text=txt_b or f"Contrasting claim regarding {d_ent}",
+                    source_doc_id="doc-disc-b",
+                    source_url=src_b,
+                    source_title=f"Source on {d_ent}",
+                    passage_snippet=txt_b,
+                )
+
+            marker_a = ""
+            marker_b = ""
+            if claim_a:
+                idx_a = registry.register_claim(claim_a)
+                for ci in idx_a:
+                    section_citation_indices.add(ci)
+                if claim_a.claim_id:
+                    section_claim_ids.append(claim_a.claim_id)
+                marker_a = registry.format_citation_marker(idx_a)
+            if claim_b:
+                idx_b = registry.register_claim(claim_b)
+                for ci in idx_b:
+                    section_citation_indices.add(ci)
+                if claim_b.claim_id:
+                    section_claim_ids.append(claim_b.claim_id)
+                marker_b = registry.format_citation_marker(idx_b)
+
+            clean_a = txt_a.strip().rstrip(".")
+            clean_b = txt_b.strip().rstrip(".")
+            a_part = f"{clean_a} {marker_a}".strip()
+            b_part = f"{clean_b} {marker_b}".strip()
+
+            disc_sentences.append(
+                f"Notably, conflicting empirical evidence emerged regarding {d_ent}: {d_expl} "
+                f"Specifically, initial findings state that {a_part}, whereas contrasting reports indicate that {b_part}."
+            )
+
+            clean_expl = d_expl.strip().rstrip(".")
+            finding_text = f"Data Variance ({d_ent}): {clean_expl} ({marker_a} vs {marker_b}).".replace("  ", " ").strip()
+            key_findings.append(finding_text)
+
+        if disc_sentences:
+            sentences.extend(disc_sentences)
+
         narrative = " ".join(sentences).strip()
         word_count = len(narrative.split())
         if word_count < self.min_section_words:
@@ -373,7 +442,8 @@ class ExtractiveSynthesizer:
             narrative=narrative,
             citation_indices=sorted(list(section_citation_indices)),
             claim_ids=section_claim_ids,
-            key_findings=key_findings[:3],
+            key_findings=key_findings[:5],
+            discrepancies=discrepancies,
         )
 
     def generate_executive_summary(

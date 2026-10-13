@@ -551,6 +551,7 @@ class ThematicSection:
     claim_ids: List[str] = field(default_factory=list)
     key_findings: List[str] = field(default_factory=list)
     content: Optional[str] = None
+    discrepancies: List[Any] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.content and self.narrative:
@@ -559,7 +560,7 @@ class ThematicSection:
             self.narrative = self.content
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        res = {
             "section_id": self.section_id,
             "title": self.title,
             "narrative": self.narrative,
@@ -568,6 +569,11 @@ class ThematicSection:
             "claim_ids": self.claim_ids,
             "key_findings": self.key_findings,
         }
+        if self.discrepancies:
+            res["discrepancies"] = [
+                d.to_dict() if hasattr(d, "to_dict") else d for d in self.discrepancies
+            ]
+        return res
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
@@ -575,6 +581,11 @@ class ThematicSection:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> ThematicSection:
         narrative = data.get("narrative") or data.get("content", "")
+        raw_discs = data.get("discrepancies", [])
+        discs = [
+            DiscrepancyGroup.from_dict(d) if isinstance(d, dict) else d
+            for d in raw_discs
+        ]
         return cls(
             section_id=data["section_id"],
             title=data["title"],
@@ -583,6 +594,7 @@ class ThematicSection:
             claim_ids=data.get("claim_ids", []),
             key_findings=data.get("key_findings", []),
             content=data.get("content", narrative),
+            discrepancies=discs,
         )
 
 
@@ -744,6 +756,24 @@ class ResearchBrief:
                     lines.append("**Key Findings**:")
                     for finding in sec.key_findings:
                         lines.append(f"- {finding}")
+                    lines.append("")
+                discs = getattr(sec, "discrepancies", [])
+                if discs:
+                    lines.append("**Data Variance & Conflicting Claims**:\n")
+                    lines.append("| Entity / Metric | Conflict Type | Claim A | Claim B | Variance Analysis |")
+                    lines.append("| :--- | :--- | :--- | :--- | :--- |")
+                    for d in discs:
+                        ent = getattr(d, "entity", "") or (d.get("entity", "") if isinstance(d, dict) else "")
+                        dtype = getattr(d, "discrepancy_type", "") or (d.get("discrepancy_type", "") if isinstance(d, dict) else "")
+                        txt_a = getattr(d, "claim_a_text", "") or (d.get("claim_a_text", "") if isinstance(d, dict) else "")
+                        txt_b = getattr(d, "claim_b_text", "") or (d.get("claim_b_text", "") if isinstance(d, dict) else "")
+                        expl = getattr(d, "explanation", "") or (d.get("explanation", "") if isinstance(d, dict) else "")
+                        ent_clean = str(ent).replace("|", "\\|").replace("\n", " ").strip()
+                        dtype_clean = str(dtype).replace("|", "\\|").replace("\n", " ").strip()
+                        txt_a_clean = str(txt_a).replace("|", "\\|").replace("\n", " ").strip()
+                        txt_b_clean = str(txt_b).replace("|", "\\|").replace("\n", " ").strip()
+                        expl_clean = str(expl).replace("|", "\\|").replace("\n", " ").strip()
+                        lines.append(f"| {ent_clean} | `{dtype_clean}` | {txt_a_clean} | {txt_b_clean} | {expl_clean} |")
                     lines.append("")
 
         if self.sources:

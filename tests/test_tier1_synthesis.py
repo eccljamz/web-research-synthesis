@@ -672,6 +672,122 @@ class TestFormattersAndSerializers(unittest.TestCase):
         self.assertEqual(len(reconstructed.thematic_sections), len(self.brief.thematic_sections))
         self.assertEqual(len(reconstructed.sources), len(self.brief.sources))
 
+    def test_html_formatter_rendering(self):
+        html = self.brief.to_html()
+        self.assertIn("<!DOCTYPE html>", html)
+        self.assertIn("<title>Research Brief:", html)
+        self.assertIn("Executive Summary</h2>", html)
+        self.assertIn("Key Takeaways</h2>", html)
+        self.assertIn("Sources & Citations</h2>", html)
+        self.assertIn('class="citation"', html)
+        self.assertIn('class="badge"', html)
+
+    def test_discrepancy_matrix_rendering_markdown_and_html(self):
+        """Test that sections with discrepancies render formatted variance tables in Markdown and HTML."""
+        from research_synthesis.models import DiscrepancyGroup
+
+        disc = DiscrepancyGroup(
+            discrepancy_id="disc-test-01",
+            entity="Energy Density",
+            discrepancy_type="NUMERICAL_VARIATION",
+            claim_a_id="clm-test-a",
+            claim_b_id="clm-test-b",
+            claim_a_text="Solid-state cells achieve 500 Wh/kg in laboratory testing [1].",
+            claim_b_text="Commercial prototype cells operate at 380 Wh/kg [2].",
+            source_a_url="https://source-a.org/spec",
+            source_b_url="https://source-b.org/spec",
+            explanation="Numerical variation on Wh/kg: 500.0 vs 380.0 (31.6% difference).",
+        )
+
+        test_brief = ResearchBrief(
+            brief_id="brief-disc-test",
+            topic="Solid-State Battery Energy Density Analysis",
+            executive_summary=(
+                "An integrated assessment of solid-state battery energy density demonstrates substantial empirical variance "
+                "across published literature and laboratory measurements [1, 2]. While advanced sulfide electrolyte cells achieve "
+                "exceptional laboratory performance, commercial prototypes exhibit lower operational ceilings that dictate initial "
+                "market deployment trajectories across consumer electronics and electric mobility sectors."
+            ),
+            key_takeaways=[
+                KeyTakeaway(text="Laboratory testing demonstrates 500 Wh/kg ceiling [1].", citation_indices=[1]),
+                KeyTakeaway(text="Production yield constraints limit initial scaling to 380 Wh/kg [2].", citation_indices=[2]),
+                KeyTakeaway(text="Electrolyte conductivity remains a critical deployment dependency.", citation_indices=[]),
+            ],
+            thematic_sections=[
+                ThematicSection(
+                    section_id="sec-01",
+                    title="Energy Density and Volumetric Performance",
+                    narrative=(
+                        "Evaluation of solid-state cathode loadings demonstrates high theoretical energy densities alongside practical "
+                        "prototype limits observed across cell evaluations [1, 2]. Notably, conflicting empirical evidence emerged regarding "
+                        "Energy Density: Numerical variation on Wh/kg: 500.0 vs 380.0 (31.6% difference). Specifically, initial findings state "
+                        "that laboratory cells reach 500 Wh/kg [1], whereas commercial reports indicate that stabilized prototypes deliver 380 Wh/kg [2]."
+                    ),
+                    citation_indices=[1, 2],
+                    claim_ids=["clm-test-a", "clm-test-b"],
+                    key_findings=[
+                        "Laboratory cells reach 500 Wh/kg under optimized conditions [1].",
+                        "Data Variance (Energy Density): Numerical variation on Wh/kg: 500.0 vs 380.0 ([1] vs [2]).",
+                    ],
+                    discrepancies=[disc],
+                ),
+                ThematicSection(
+                    section_id="sec-02",
+                    title="Industrial Scaling and Manufacturing Viability",
+                    narrative=(
+                        "Manufacturing pilot lines demonstrate progressive yield stabilization across sulfide and oxide separator lines, "
+                        "reducing micro-crack defect frequencies during dry-room pouch assembly [1]. Continuous slot-die coating and roll-to-roll "
+                        "calendaring protocols enable reproducible electrolyte membrane fabrication meeting industrial automotive tolerance levels."
+                    ),
+                    citation_indices=[1],
+                    claim_ids=["clm-test-c"],
+                    key_findings=["Pilot lines achieve baseline mechanical integrity [1]."],
+                ),
+            ],
+            sources=[
+                SourceCitation(
+                    citation_index=1,
+                    source_id="SRC-01",
+                    title="Solid-State Laboratory Benchmarks",
+                    url="https://source-a.org/spec",
+                    snippet="Laboratory testing of sulfide solid-state cells achieved 500 Wh/kg density.",
+                ),
+                SourceCitation(
+                    citation_index=2,
+                    source_id="SRC-02",
+                    title="Commercial Prototype Production Report",
+                    url="https://source-b.org/spec",
+                    snippet="Initial commercial prototypes demonstrated stabilized density of 380 Wh/kg.",
+                ),
+            ],
+            sub_queries=[
+                "Solid-state battery energy density benchmarks",
+                "Solid-state battery manufacturing and commercial scaling",
+            ],
+        )
+
+        # 1. Verify Markdown Formatter renders Data Variance table
+        md = test_brief.to_markdown()
+        self.assertIn("**Data Variance & Conflicting Claims**:", md)
+        self.assertIn("| Entity / Metric | Conflict Type | Claim A | Claim B | Variance Analysis |", md)
+        self.assertIn("Energy Density", md)
+        self.assertIn("`NUMERICAL_VARIATION`", md)
+        self.assertIn("500 Wh/kg", md)
+        self.assertIn("380 Wh/kg", md)
+
+        # 2. Verify HTML Formatter renders discrepancy table and CSS classes
+        html = test_brief.to_html()
+        self.assertIn("discrepancy-box", html)
+        self.assertIn("discrepancy-table", html)
+        self.assertIn("Data Variance &amp; Conflicting Claims", html)
+        self.assertIn("NUMERICAL_VARIATION", html)
+        self.assertIn("31.6% difference", html)
+
+        # 3. Verify Schema & Strict Referential Integrity
+        validator = ResearchBriefValidator(strict=True)
+        res = validator.validate(test_brief.to_dict())
+        self.assertTrue(res.is_valid, f"Discrepancy brief must satisfy strict validation: {res.errors}")
+
 
 # ============================================================================
 # Suite 4: Research Pipeline End-to-End Integration Tests

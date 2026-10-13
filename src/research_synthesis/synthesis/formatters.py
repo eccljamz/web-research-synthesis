@@ -89,6 +89,29 @@ class MarkdownFormatter:
                     lines.append(f"- {finding.strip()}")
                 lines.append("")
 
+            # Data Variance & Conflicting Claims Table
+            discs = getattr(sec, "discrepancies", [])
+            if discs:
+                lines.append("**Data Variance & Conflicting Claims**:")
+                lines.append("")
+                lines.append("| Entity / Metric | Conflict Type | Claim A | Claim B | Variance Analysis |")
+                lines.append("| :--- | :--- | :--- | :--- | :--- |")
+                for d in discs:
+                    ent = getattr(d, "entity", "") or (d.get("entity", "") if isinstance(d, dict) else "")
+                    dtype = getattr(d, "discrepancy_type", "") or (d.get("discrepancy_type", "") if isinstance(d, dict) else "")
+                    txt_a = getattr(d, "claim_a_text", "") or (d.get("claim_a_text", "") if isinstance(d, dict) else "")
+                    txt_b = getattr(d, "claim_b_text", "") or (d.get("claim_b_text", "") if isinstance(d, dict) else "")
+                    expl = getattr(d, "explanation", "") or (d.get("explanation", "") if isinstance(d, dict) else "")
+
+                    ent_clean = str(ent).replace("|", "\\|").replace("\n", " ").strip()
+                    dtype_clean = str(dtype).replace("|", "\\|").replace("\n", " ").strip()
+                    txt_a_clean = str(txt_a).replace("|", "\\|").replace("\n", " ").strip()
+                    txt_b_clean = str(txt_b).replace("|", "\\|").replace("\n", " ").strip()
+                    expl_clean = str(expl).replace("|", "\\|").replace("\n", " ").strip()
+
+                    lines.append(f"| {ent_clean} | `{dtype_clean}` | {txt_a_clean} | {txt_b_clean} | {expl_clean} |")
+                lines.append("")
+
         lines.append("---")
         lines.append("")
 
@@ -347,6 +370,35 @@ class HTMLReportFormatter:
     .source-title { font-weight: 600; margin-bottom: 0.25rem; }
     .source-url { font-size: 0.85rem; color: var(--accent); word-break: break-all; }
     .source-snippet { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.4rem; font-style: italic; }
+    .discrepancy-box {
+        margin-top: 1.25rem;
+        padding: 1.25rem;
+        background-color: var(--code-bg);
+        border-left: 4px solid #eab308;
+        border-radius: 6px;
+    }
+    .table-container {
+        overflow-x: auto;
+        margin-top: 0.75rem;
+    }
+    .discrepancy-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .discrepancy-table th, .discrepancy-table td {
+        padding: 0.6rem 0.75rem;
+        border: 1px solid var(--border-color);
+        text-align: left;
+        vertical-align: top;
+    }
+    .discrepancy-table th {
+        background-color: var(--card-bg);
+        font-weight: 600;
+    }
+    .discrepancy-table tr:nth-child(even) td {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
     @media print {
         body { background: #fff; color: #000; padding: 0; }
         .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
@@ -390,11 +442,47 @@ class HTMLReportFormatter:
                 f_items = [f"<li>{cls._linkify_citations(html.escape(f.strip()))}</li>" for f in sec.key_findings]
                 findings_html = f"<h3>Key Findings</h3><ul>{''.join(f_items)}</ul>"
 
+            discrepancy_html = ""
+            discs = getattr(sec, "discrepancies", [])
+            if discs:
+                rows = []
+                for d in discs:
+                    ent = html.escape(str(getattr(d, "entity", "") or (d.get("entity", "") if isinstance(d, dict) else "")))
+                    dtype = html.escape(str(getattr(d, "discrepancy_type", "") or (d.get("discrepancy_type", "") if isinstance(d, dict) else "")))
+                    raw_a = str(getattr(d, "claim_a_text", "") or (d.get("claim_a_text", "") if isinstance(d, dict) else ""))
+                    raw_b = str(getattr(d, "claim_b_text", "") or (d.get("claim_b_text", "") if isinstance(d, dict) else ""))
+                    expl = html.escape(str(getattr(d, "explanation", "") or (d.get("explanation", "") if isinstance(d, dict) else "")))
+
+                    txt_a = cls._linkify_citations(html.escape(raw_a))
+                    txt_b = cls._linkify_citations(html.escape(raw_b))
+
+                    rows.append(
+                        f"<tr>"
+                        f"<td><strong>{ent}</strong></td>"
+                        f"<td><span class=\"badge\">{dtype}</span></td>"
+                        f"<td>{txt_a}</td>"
+                        f"<td>{txt_b}</td>"
+                        f"<td>{expl}</td>"
+                        f"</tr>"
+                    )
+                discrepancy_html = (
+                    f'<div class="discrepancy-box">'
+                    f'<h3>Data Variance &amp; Conflicting Claims</h3>'
+                    f'<div class="table-container">'
+                    f'<table class="discrepancy-table">'
+                    f'<thead><tr><th>Entity / Metric</th><th>Type</th><th>Claim A</th><th>Claim B</th><th>Variance Analysis</th></tr></thead>'
+                    f'<tbody>{"".join(rows)}</tbody>'
+                    f'</table>'
+                    f'</div>'
+                    f'</div>'
+                )
+
             sections_html.append(
                 f'<div class="card">'
                 f'<h2>{idx}. {sec_title}</h2>'
                 f'<p>{narrative}</p>'
                 f'{findings_html}'
+                f'{discrepancy_html}'
                 f'</div>'
             )
 
