@@ -255,7 +255,53 @@ class TestResearchServerEndpoints(unittest.TestCase):
         self.assertIn("Index.md", vault_data["files"])
         self.assertIn("Knowledge_Graph.canvas", vault_data["files"])
 
-    def test_synthesize_async_and_poll_status(self):
+        # Obsidian Vault ZIP Download
+        z_status, z_body, z_headers = self._http_get(f"/brief/{brief_id}/obsidian-vault.zip")
+        self.assertEqual(z_status, 200)
+        self.assertEqual(z_headers.get("Content-Type"), "application/zip")
+        self.assertIn(f'{brief_id}_obsidian_vault.zip', z_headers.get("Content-Disposition", ""))
+
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(z_body), "r") as zf:
+            namelist = zf.namelist()
+            self.assertIn("Index.md", namelist)
+            self.assertIn("Knowledge_Graph.canvas", namelist)
+            sec_notes = [n for n in namelist if n.startswith("Sections/")]
+            self.assertGreaterEqual(len(sec_notes), 1)
+
+    def test_sse_stream_job_progress(self):
+        """Test streaming real-time stage progress over Server-Sent Events (SSE)."""
+        topic = "Microplastic Bioaccumulation In Soil Ecosystems"
+        status, body, _ = self._http_post("/api/synthesize", {
+            "topic": topic,
+            "mode": "mock",
+            "async": True,
+        })
+        self.assertEqual(status, 202)
+        job_id = json.loads(body.decode("utf-8"))["job_id"]
+
+        url = f"{self.base_url}/api/jobs/{job_id}/stream"
+        req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+
+        events = []
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            self.assertEqual(resp.getcode(), 200)
+            self.assertEqual(resp.headers.get("Content-Type"), "text/event-stream")
+
+            for line in resp:
+                decoded = line.decode("utf-8").strip()
+                if decoded.startswith("data: "):
+                    event_json = json.loads(decoded[6:])
+                    events.append(event_json)
+                    if event_json.get("status") in ("completed", "failed"):
+                        break
+
+        self.assertGreaterEqual(len(events), 1)
+        final_event = events[-1]
+        self.assertEqual(final_event["status"], "completed")
+        self.assertEqual(final_event["progress"]["percentage"], 100)
+        self.assertTrue(final_event["brief_id"].startswith("brief-"))
         """Test async synthesis, poll job until completed, and verify progress tracking."""
         topic = "Global Supply Chain Re-Shoring Dynamics"
         status, body, _ = self._http_post("/api/synthesize", {

@@ -15,15 +15,18 @@ from __future__ import annotations
 
 import argparse
 import html
+import io
 import json
 import logging
 import os
+import queue
 import re
 import sys
 import threading
 import time
 import urllib.parse
 import webbrowser
+import zipfile
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,6 +66,28 @@ class SynthesisJob:
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.completed_at: Optional[str] = None
         self.elapsed_sec: float = 0.0
+        self._listeners: List[queue.Queue] = []
+        self._listener_lock = threading.Lock()
+
+    def add_listener(self) -> queue.Queue:
+        with self._listener_lock:
+            q = queue.Queue(maxsize=100)
+            self._listeners.append(q)
+            return q
+
+    def remove_listener(self, q: queue.Queue) -> None:
+        with self._listener_lock:
+            if q in self._listeners:
+                self._listeners.remove(q)
+
+    def notify_listeners(self) -> None:
+        data = self.to_dict()
+        with self._listener_lock:
+            for q in list(self._listeners):
+                try:
+                    q.put_nowait(data)
+                except queue.Full:
+                    pass
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -575,9 +600,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <button class="tab-btn active" onclick="switchTab('html')">Interactive Brief (HTML)</button>
                         <button class="tab-btn" onclick="switchTab('markdown')">Markdown</button>
                         <button class="tab-btn" onclick="switchTab('json')">JSON Schema</button>
+                        <button class="tab-btn" onclick="switchTab('graph')">Knowledge Graph</button>
                         <div style="margin-left: auto; display: flex; gap: 0.5rem;">
                             <button class="btn" onclick="copyCurrentContent()" title="Copy active content to clipboard">Copy</button>
                             <button class="btn" onclick="downloadCurrentContent()" title="Download current artifact">Download</button>
+                            <button class="btn" id="obsidianZipBtn" onclick="downloadObsidianZip()" style="display: none;" title="Download complete Obsidian vault as .zip">Obsidian Vault (.zip)</button>
                         </div>
                     </div>
 
@@ -597,6 +624,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     <div id="jsonTab" class="tab-content">
                         <pre class="code-view" id="jsonCode"></pre>
                     </div>
+
+                    <div id="graphTab" class="tab-content" style="display: none;">
+                        <div style="width: 100%; height: 600px; border: 1px solid var(--border); border-radius: 6px; background-color: var(--code-bg); position: relative; overflow: hidden;">
+                            <svg id="graphSvg" style="width: 100%; height: 100%; display: block;"></svg>
+                            <div style="position: absolute; bottom: 12px; left: 12px; background: var(--card-bg); padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.75rem; display: flex; gap: 14px; z-index: 10; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span> Topic</span>
+                                <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; background: #10b981; border-radius: 50%; display: inline-block;"></span> Section</span>
+                                <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; background: #f59e0b; border-radius: 50%; display: inline-block;"></span> Source</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>
@@ -604,6 +642,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     <script>
         let currentBriefId = null;
+        let currentBriefData = null;
         let activeTab = 'html';
         let currentJobId = null;
         let pollInterval = null;
@@ -618,6 +657,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const next = current === 'dark' ? 'light' : 'dark';
             body.setAttribute('data-theme', next);
             localStorage.setItem('rs_theme', next);
+            if (activeTab === 'graph' && currentBriefData) {
+                renderGraph(currentBriefData);
+            }
         }
 
         // Initialize theme
@@ -628,13 +670,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         function switchTab(tab) {
             activeTab = tab;
+            const tabs = ['html', 'markdown', 'json', 'graph'];
             document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
-                const tabs = ['html', 'markdown', 'json'];
                 btn.classList.toggle('active', tabs[idx] === tab);
             });
             document.getElementById('htmlTab').style.display = (tab === 'html' && currentBriefId) ? 'block' : 'none';
             document.getElementById('markdownTab').style.display = (tab === 'markdown' && currentBriefId) ? 'block' : 'none';
             document.getElementById('jsonTab').style.display = (tab === 'json' && currentBriefId) ? 'block' : 'none';
+            document.getElementById('graphTab').style.display = (tab === 'graph' && currentBriefId) ? 'block' : 'none';
+            if (tab === 'graph' && currentBriefId && currentBriefData) {
+                renderGraph(currentBriefData);
+            }
         }
 
         async function submitResearch(event) {
@@ -663,7 +709,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 if (data.job_id) {
                     currentJobId = data.job_id;
-                    pollJobStatus();
+                    streamJobStatus(data.job_id);
                 } else if (data.error) {
                     alert('Synthesis failed: ' + data.error);
                     resetSubmitButton();
@@ -678,6 +724,45 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             document.getElementById('progressBar').style.width = percent + '%';
             document.getElementById('progressPercent').textContent = percent + '%';
             document.getElementById('progressMessage').textContent = msg;
+        }
+
+        function streamJobStatus(jobId) {
+            if (typeof EventSource !== 'undefined') {
+                const evtSource = new EventSource(`/api/jobs/${jobId}/stream`);
+                evtSource.onmessage = function(e) {
+                    try {
+                        const job = JSON.parse(e.data);
+                        if (job.progress) {
+                            updateProgress(job.progress.percentage, job.progress.message);
+                        }
+                        if (job.status === 'completed') {
+                            evtSource.close();
+                            resetSubmitButton();
+                            updateProgress(100, 'Complete!');
+                            document.getElementById('statusPill').className = 'status-pill ready';
+                            document.getElementById('serverStatusText').textContent = 'Ready';
+                            if (job.brief_id) {
+                                loadBrief(job.brief_id);
+                                loadBriefsArchive();
+                            }
+                        } else if (job.status === 'failed') {
+                            evtSource.close();
+                            resetSubmitButton();
+                            alert('Synthesis error: ' + (job.error || 'Unknown failure'));
+                            document.getElementById('statusPill').className = 'status-pill ready';
+                            document.getElementById('serverStatusText').textContent = 'Error';
+                        }
+                    } catch (err) {
+                        console.error('SSE JSON error:', err);
+                    }
+                };
+                evtSource.onerror = function() {
+                    evtSource.close();
+                    pollJobStatus(); // Fallback to polling
+                };
+            } else {
+                pollJobStatus();
+            }
         }
 
         function pollJobStatus() {
@@ -727,6 +812,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         async function loadBrief(briefId) {
             currentBriefId = briefId;
             document.getElementById('emptyView').style.display = 'none';
+            document.getElementById('obsidianZipBtn').style.display = 'inline-block';
 
             // 1. Load HTML
             const iframe = document.getElementById('briefIframe');
@@ -736,7 +822,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             try {
                 const resJson = await fetch(`/api/briefs/${briefId}`);
                 const dataJson = await resJson.json();
+                currentBriefData = dataJson;
                 document.getElementById('jsonCode').textContent = JSON.stringify(dataJson, null, 2);
+                if (activeTab === 'graph') {
+                    renderGraph(currentBriefData);
+                }
             } catch (e) {
                 document.getElementById('jsonCode').textContent = 'Failed to load JSON: ' + e;
             }
@@ -755,6 +845,204 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             // Highlight in archive
             document.querySelectorAll('.archive-item').forEach(el => {
                 el.classList.toggle('active', el.dataset.briefId === briefId);
+            });
+        }
+
+        function downloadObsidianZip() {
+            if (!currentBriefId) return;
+            const a = document.createElement('a');
+            a.href = `/brief/${currentBriefId}/obsidian-vault.zip`;
+            a.download = `${currentBriefId}_obsidian_vault.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function renderGraph(brief) {
+            const svg = document.getElementById('graphSvg');
+            if (!svg || !brief) return;
+            svg.innerHTML = '';
+
+            const width = svg.clientWidth || 800;
+            const height = svg.clientHeight || 550;
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+            const cx = width / 2;
+            const cy = height / 2;
+            const sections = brief.thematic_sections || brief.sections || [];
+            const sources = brief.sources || [];
+
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            svg.appendChild(g);
+
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--text-secondary)" opacity="0.6"/>
+                </marker>
+            `;
+            g.appendChild(defs);
+
+            const sectionNodes = [];
+            const secRadius = Math.min(width, height) * 0.28;
+            const secAngleStep = (2 * Math.PI) / (sections.length || 1);
+
+            sections.forEach((sec, i) => {
+                const angle = i * secAngleStep - Math.PI / 2;
+                const sx = cx + secRadius * Math.cos(angle);
+                const sy = cy + secRadius * Math.sin(angle);
+                sectionNodes.push({ id: `sec-${i}`, title: sec.title, x: sx, y: sy, raw: sec });
+            });
+
+            const sourceNodes = [];
+            const srcRadius = Math.min(width, height) * 0.44;
+            const srcAngleStep = (2 * Math.PI) / (sources.length || 1);
+
+            sources.forEach((src, i) => {
+                const angle = i * srcAngleStep - Math.PI / 2;
+                const px = cx + srcRadius * Math.cos(angle);
+                const py = cy + srcRadius * Math.sin(angle);
+                sourceNodes.push({
+                    id: `src-${src.citation_index || (i + 1)}`,
+                    label: `[${src.citation_index || (i + 1)}]`,
+                    title: src.title,
+                    url: src.url,
+                    x: px,
+                    y: py,
+                    raw: src
+                });
+            });
+
+            // 1. Edges: Topic -> Sections
+            sectionNodes.forEach(sn => {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', cx);
+                line.setAttribute('y1', cy);
+                line.setAttribute('x2', sn.x);
+                line.setAttribute('y2', sn.y);
+                line.setAttribute('stroke', 'var(--border)');
+                line.setAttribute('stroke-width', '2');
+                line.setAttribute('marker-end', 'url(#arrow)');
+                g.appendChild(line);
+            });
+
+            // 2. Edges: Sections -> Sources
+            sections.forEach((sec, i) => {
+                const sn = sectionNodes[i];
+                const secCites = sec.citation_indices || [];
+                sourceNodes.forEach(srn => {
+                    const citeIdx = srn.raw.citation_index;
+                    if (secCites.includes(citeIdx) || (sec.narrative && sec.narrative.includes(`[${citeIdx}]`))) {
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        line.setAttribute('x1', sn.x);
+                        line.setAttribute('y1', sn.y);
+                        line.setAttribute('x2', srn.x);
+                        line.setAttribute('y2', srn.y);
+                        line.setAttribute('stroke', 'var(--border)');
+                        line.setAttribute('stroke-width', '1.5');
+                        line.setAttribute('stroke-dasharray', '3,3');
+                        line.setAttribute('opacity', '0.7');
+                        g.appendChild(line);
+                    }
+                });
+            });
+
+            // 3. Central Topic Node
+            const topicGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            topicGroup.style.cursor = 'pointer';
+
+            const centerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            centerCircle.setAttribute('cx', cx);
+            centerCircle.setAttribute('cy', cy);
+            centerCircle.setAttribute('r', '32');
+            centerCircle.setAttribute('fill', '#3b82f6');
+            centerCircle.setAttribute('stroke', '#ffffff');
+            centerCircle.setAttribute('stroke-width', '2.5');
+            topicGroup.appendChild(centerCircle);
+
+            const topicText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            topicText.setAttribute('x', cx);
+            topicText.setAttribute('y', cy + 4);
+            topicText.setAttribute('text-anchor', 'middle');
+            topicText.setAttribute('fill', '#ffffff');
+            topicText.setAttribute('font-size', '11px');
+            topicText.setAttribute('font-weight', 'bold');
+            topicText.textContent = 'TOPIC';
+            topicGroup.appendChild(topicText);
+
+            const topicTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            topicTitle.textContent = brief.topic;
+            topicGroup.appendChild(topicTitle);
+            g.appendChild(topicGroup);
+
+            // 4. Section Nodes
+            sectionNodes.forEach(sn => {
+                const sGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                sGroup.style.cursor = 'pointer';
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', sn.x);
+                circle.setAttribute('cy', sn.y);
+                circle.setAttribute('r', '22');
+                circle.setAttribute('fill', '#10b981');
+                circle.setAttribute('stroke', '#ffffff');
+                circle.setAttribute('stroke-width', '2');
+                sGroup.appendChild(circle);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', sn.x);
+                label.setAttribute('y', sn.y + 4);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('fill', '#ffffff');
+                label.setAttribute('font-size', '10px');
+                label.setAttribute('font-weight', 'bold');
+                label.textContent = sn.id.toUpperCase();
+                sGroup.appendChild(label);
+
+                const caption = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                caption.setAttribute('x', sn.x);
+                caption.setAttribute('y', sn.y + 36);
+                caption.setAttribute('text-anchor', 'middle');
+                caption.setAttribute('fill', 'var(--text-primary)');
+                caption.setAttribute('font-size', '10px');
+                caption.textContent = sn.title.length > 20 ? sn.title.substring(0, 18) + '...' : sn.title;
+                sGroup.appendChild(caption);
+
+                const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                t.textContent = sn.title;
+                sGroup.appendChild(t);
+                g.appendChild(sGroup);
+            });
+
+            // 5. Source Nodes
+            sourceNodes.forEach(srn => {
+                const srcGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                srcGroup.style.cursor = 'pointer';
+                srcGroup.onclick = () => { if (srn.url) window.open(srn.url, '_blank'); };
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', srn.x);
+                circle.setAttribute('cy', srn.y);
+                circle.setAttribute('r', '16');
+                circle.setAttribute('fill', '#f59e0b');
+                circle.setAttribute('stroke', '#ffffff');
+                circle.setAttribute('stroke-width', '1.5');
+                srcGroup.appendChild(circle);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', srn.x);
+                label.setAttribute('y', srn.y + 4);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('fill', '#ffffff');
+                label.setAttribute('font-size', '9px');
+                label.setAttribute('font-weight', 'bold');
+                label.textContent = srn.label;
+                srcGroup.appendChild(label);
+
+                const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                t.textContent = `${srn.label} ${srn.title}\n${srn.url}`;
+                srcGroup.appendChild(t);
+                g.appendChild(srcGroup);
             });
         }
 
@@ -930,6 +1218,52 @@ class ResearchServerHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Job '{j_id}' not found"})
             return
 
+        # 5b. Stream Job Progress via SSE: /api/jobs/{job_id}/stream
+        stream_match = re.match(r"^/api/jobs/([a-zA-Z0-9_\-]+)/stream$", path)
+        if stream_match:
+            j_id = stream_match.group(1)
+            job = self.server_state.get_job(j_id)
+            if not job:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Job '{j_id}' not found"})
+                return
+
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self._send_cors_headers()
+            self.end_headers()
+
+            q = job.add_listener()
+            try:
+                # Send immediate current state
+                init_data = json.dumps(job.to_dict())
+                self.wfile.write(f"data: {init_data}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+                while job.status not in ("completed", "failed"):
+                    try:
+                        event_data = q.get(timeout=0.5)
+                        msg = f"data: {json.dumps(event_data)}\n\n".encode("utf-8")
+                        self.wfile.write(msg)
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": heartbeat\n\n")
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+
+                # Send terminal event
+                term_data = json.dumps(job.to_dict())
+                try:
+                    self.wfile.write(f"data: {term_data}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            finally:
+                job.remove_listener(q)
+            return
+
         # 6. Rendered Brief HTML: /brief/{brief_id}
         html_match = re.match(r"^/brief/([a-zA-Z0-9_\-]+)$", path)
         if html_match:
@@ -979,6 +1313,34 @@ class ResearchServerHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Brief '{b_id}' not found"})
             return
 
+        # 10. Obsidian Vault ZIP Download: /brief/{brief_id}/obsidian-vault.zip
+        zip_match = re.match(r"^/brief/([a-zA-Z0-9_\-]+)/obsidian-vault\.zip$", path)
+        if zip_match:
+            b_id = zip_match.group(1)
+            brief = self.server_state.get_brief(b_id)
+            if brief:
+                try:
+                    from research_synthesis.synthesis.formatters import ObsidianExporter
+                except ImportError:
+                    from src.research_synthesis.synthesis.formatters import ObsidianExporter
+                vault_files = ObsidianExporter.format_vault(brief)
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for rel_path, content in vault_files.items():
+                        zf.writestr(rel_path, content.encode("utf-8"))
+                zip_data = buf.getvalue()
+
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{b_id}_obsidian_vault.zip"')
+                self.send_header("Content-Length", str(len(zip_data)))
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(zip_data)
+            else:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Brief '{b_id}' not found"})
+            return
+
         # Not Found Fallback
         self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Endpoint '{self.path}' not found"})
 
@@ -1014,22 +1376,26 @@ class ResearchServerHandler(BaseHTTPRequestHandler):
                 job.status = "running"
                 job.progress_stage = 1
                 job.progress_message = "Starting research pipeline..."
+                job.notify_listeners()
 
                 def _progress_cb(stage: int, total: int, msg: str):
                     job.progress_stage = stage
                     job.total_stages = total
                     job.progress_message = msg
+                    job.notify_listeners()
 
                 try:
                     pipeline = ResearchPipeline(mode=job.mode)
                     brief = pipeline.run(topic=job.topic, progress_callback=_progress_cb)
                     job.elapsed_sec = time.perf_counter() - t0
                     self.server_state.register_completed_brief(job, brief)
+                    job.notify_listeners()
                 except Exception as exc:
                     job.status = "failed"
                     job.error = str(exc)
                     job.elapsed_sec = time.perf_counter() - t0
                     job.completed_at = datetime.now(timezone.utc).isoformat()
+                    job.notify_listeners()
 
             if is_async:
                 thread = threading.Thread(target=_worker, daemon=True)
