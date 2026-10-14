@@ -563,6 +563,29 @@ class ResearchPipeline:
             brief.metadata.extra["error"] = error_msg
         return brief
 
+    def compare(
+        self,
+        items: Sequence[Union[str, ResearchBrief]],
+        comparison_title: Optional[str] = None,
+    ) -> Any:
+        """Run comparative & longitudinal synthesis across two or more topics or ResearchBriefs."""
+        try:
+            from research_synthesis.synthesis.comparative import ComparativeSynthesisEngine
+        except ImportError:
+            from .synthesis.comparative import ComparativeSynthesisEngine
+
+        engine = ComparativeSynthesisEngine()
+        briefs: List[ResearchBrief] = []
+        for item in items:
+            if isinstance(item, ResearchBrief):
+                briefs.append(item)
+            elif isinstance(item, str):
+                briefs.append(self.run(item))
+            else:
+                raise TypeError(f"Unsupported item type for comparison: {type(item)}")
+
+        return engine.compare_briefs(briefs, comparison_title=comparison_title)
+
 
 __all__ = [
     "ResearchPipeline",

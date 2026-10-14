@@ -253,11 +253,52 @@ class DocumentParser:
         """Parse a RawWebDocument into a clean, structured CleanArticle.
 
         Args:
-            raw_doc: The raw retrieved web document.
+            raw_doc: The raw retrieved web document (HTML or raw PDF stream).
 
         Returns:
             CleanArticle with extracted metadata and boilerplate-stripped text.
         """
+        content_type = raw_doc.headers.get("Content-Type", "text/html")
+        raw_content = raw_doc.raw_html or ""
+
+        # Native PDF stream ingestion (Track B) if raw_html contains raw %PDF- binary/latin-1 stream
+        if raw_content.lstrip().startswith("%PDF-"):
+            try:
+                from research_synthesis.retrieval.pdf_parser import ZeroDepPDFExtractor
+            except ImportError:
+                from .pdf_parser import ZeroDepPDFExtractor
+
+            pdf_bytes = raw_content.encode("latin-1", errors="ignore")
+            extracted = ZeroDepPDFExtractor.extract_from_bytes(pdf_bytes)
+            parsed_url = urlparse(raw_doc.url)
+            domain = parsed_url.netloc.lower() or "unknown_domain"
+            path_part = parsed_url.path.strip("/").split("/")[-1].replace(".pdf", "").replace("-", " ").replace("_", " ")
+            resolved_title = extracted.title or (path_part.title() if path_part else f"PDF Document from {domain}")
+            author = extracted.author or domain
+            cleaned_text = extracted.text
+            doc_id = hashlib.sha256(raw_doc.url.encode("utf-8")).hexdigest()[:16]
+            metadata = DocumentMetadata(
+                url=raw_doc.url,
+                canonical_url=raw_doc.url,
+                domain=domain,
+                title=resolved_title,
+                author=author,
+                published_date=extracted.published_date,
+                content_type="application/pdf",
+                status_code=raw_doc.status_code,
+                word_count=len(cleaned_text.split()),
+                character_count=len(cleaned_text),
+            )
+            return CleanArticle(
+                doc_id=doc_id,
+                url=raw_doc.url,
+                metadata=metadata,
+                cleaned_text=cleaned_text,
+                paragraphs=extracted.paragraphs,
+                headings=extracted.headings,
+                subquery_id=raw_doc.subquery_id,
+            )
+
         parser = RobustHTMLParser()
         try:
             preprocessed = RobustHTMLParser._preprocess_html(raw_doc.raw_html)

@@ -245,8 +245,41 @@ Examples:
         action="store_true",
         help="Suppress non-essential progress output",
     )
+    parser.add_argument(
+        "-c", "--compare",
+        nargs="+",
+        default=None,
+        help="Additional topic(s) to compare against the primary topic using ComparativeSynthesisEngine",
+    )
 
     args = parser.parse_args()
+
+    if args.compare:
+        topics_to_compare: List[str] = []
+        if args.topic:
+            topics_to_compare.append(args.topic)
+        topics_to_compare.extend(args.compare)
+        if len(topics_to_compare) < 2:
+            print("[ERROR] Comparative synthesis requires at least 2 topics.", file=sys.stderr)
+            sys.exit(1)
+        print_banner()
+        pipeline = ResearchPipeline(mode=args.mode, use_cache=not args.no_cache)
+        cmp_result = pipeline.compare(topics_to_compare)
+        meta_brief = cmp_result.meta_brief
+        out_path = Path(args.output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        slug = slugify(meta_brief.topic)
+        if args.format in ("markdown", "both", "all"):
+            (out_path / f"{slug}.md").write_text(meta_brief.to_markdown(), encoding="utf-8")
+        if args.format in ("json", "both", "all"):
+            (out_path / f"{slug}.json").write_text(cmp_result.to_json(indent=2), encoding="utf-8")
+        if args.format in ("html", "both", "all"):
+            (out_path / f"{slug}.html").write_text(meta_brief.to_html(), encoding="utf-8")
+        if not args.quiet:
+            print(f"\n{GREEN}{BOLD}[DONE] COMPARATIVE SYNTHESIS COMPLETE{RESET}")
+            print(f"{CYAN}{BOLD}Meta-Brief:{RESET} {meta_brief.topic} ({meta_brief.brief_id})")
+            print(f"{DIM}Trade-Off Dimensions:{RESET} {len(cmp_result.tradeoff_matrix)} | {DIM}Temporal Shifts:{RESET} {len(cmp_result.temporal_shifts)}")
+        return
 
     if args.interactive or args.topic is None:
         repl_mode(

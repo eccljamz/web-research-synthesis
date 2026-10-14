@@ -10,8 +10,14 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+SRC_DIR = Path(__file__).resolve().parent.parent / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from research_synthesis.models import RawWebDocument
 from research_synthesis.retrieval.cache import SQLiteDocumentCache

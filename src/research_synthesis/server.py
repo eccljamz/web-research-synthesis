@@ -1415,6 +1415,57 @@ class ResearchServerHandler(BaseHTTPRequestHandler):
                     })
             return
 
+        if path == "/api/compare":
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length <= 0:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Missing JSON request body"})
+                return
+
+            try:
+                body_bytes = self.rfile.read(content_length)
+                payload = json.loads(body_bytes.decode("utf-8"))
+            except Exception as e:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON payload: {e}"})
+                return
+
+            try:
+                from research_synthesis.synthesis.comparative import ComparativeSynthesisEngine
+            except ImportError:
+                from .synthesis.comparative import ComparativeSynthesisEngine
+
+            brief_ids = payload.get("brief_ids", [])
+            topics = payload.get("topics", [])
+            mode = payload.get("mode", self.server_state.default_mode)
+            title = payload.get("title")
+
+            engine = ComparativeSynthesisEngine()
+            briefs_to_compare: List[ResearchBrief] = []
+
+            for b_id in brief_ids:
+                existing = self.server_state.get_brief(str(b_id))
+                if existing:
+                    briefs_to_compare.append(existing)
+
+            if len(briefs_to_compare) < 2 and topics and len(topics) >= 2:
+                pipeline = ResearchPipeline(mode=mode)
+                briefs_to_compare = [pipeline.run(str(t).strip()) for t in topics if str(t).strip()]
+
+            if len(briefs_to_compare) < 2:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "Provide at least 2 valid 'brief_ids' or 2 'topics' for comparison."},
+                )
+                return
+
+            try:
+                cmp_result = engine.compare_briefs(briefs_to_compare, comparison_title=title)
+                dummy_job = self.server_state.create_job(topic=cmp_result.meta_brief.topic, mode=mode)
+                self.server_state.register_completed_brief(dummy_job, cmp_result.meta_brief)
+                self._send_json(HTTPStatus.OK, cmp_result.to_dict())
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            return
+
         self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Endpoint '{self.path}' not found"})
 
     def log_message(self, format: str, *args: Any) -> None:

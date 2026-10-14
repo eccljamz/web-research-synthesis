@@ -620,7 +620,8 @@ class ArxivRetrievalClient(BaseRetrievalClient):
     """Academic literature retrieval client querying the arXiv Atom API (export.arxiv.org).
 
     Uses standard library urllib.request and xml.etree.ElementTree to query arXiv Atom feeds,
-    extracting publication titles, authors, publication dates, and paper abstracts.
+    extracting publication titles, authors, publication dates, paper abstracts, and optional
+    full-text PDF streams via pure-stdlib /FlateDecode decompression (ZeroDepPDFExtractor).
     """
 
     API_URL = "https://export.arxiv.org/api/query"
@@ -632,16 +633,30 @@ class ArxivRetrievalClient(BaseRetrievalClient):
         user_agent: Optional[str] = None,
         timeout: float = 10.0,
         cache: Optional[Any] = None,
+        fetch_pdf: bool = False,
     ):
         self.user_agent = user_agent or self.DEFAULT_USER_AGENT
         self.timeout = timeout
         self.cache = cache
+        self.fetch_pdf = fetch_pdf
         self.fetcher = LiveHttpRetrievalClient(user_agent=self.user_agent)
         self._entry_cache: Dict[str, Dict[str, Any]] = {}
 
     def can_handle(self, url: str) -> bool:
         """Check if URL is an arXiv paper or cached by this client."""
         return "arxiv.org" in url.lower() or url in self._entry_cache
+
+    @staticmethod
+    def derive_pdf_url(paper_url: str) -> str:
+        """Derive the canonical arXiv PDF URL from an abstract URL."""
+        if not paper_url:
+            return ""
+        if "/pdf/" in paper_url:
+            return paper_url if paper_url.endswith(".pdf") else f"{paper_url}.pdf"
+        if "/abs/" in paper_url:
+            pdf_base = paper_url.replace("/abs/", "/pdf/")
+            return pdf_base if pdf_base.endswith(".pdf") else f"{pdf_base}.pdf"
+        return ""
 
     def _find_text(self, elem: Any, tag_name: str) -> str:
         for child in elem:
@@ -700,29 +715,42 @@ class ArxivRetrievalClient(BaseRetrievalClient):
                         if name:
                             authors.append(name)
 
-                # Locate canonical abstract or alternate link
+                # Locate canonical abstract link and optional PDF link
                 paper_url = ""
+                pdf_url = ""
                 for link in child:
                     l_tag = link.tag.split("}")[-1] if "}" in link.tag else link.tag
                     if l_tag.lower() == "link":
-                        if link.get("rel") == "alternate" and link.get("href"):
-                            paper_url = link.get("href")
-                            break
-                        if not paper_url and link.get("href", "").startswith("http"):
-                            paper_url = link.get("href")
+                        href = link.get("href", "")
+                        l_title = (link.get("title") or "").lower()
+                        l_type = (link.get("type") or "").lower()
+                        if l_title == "pdf" or "application/pdf" in l_type:
+                            if href:
+                                pdf_url = href
+                        elif link.get("rel") == "alternate" and href:
+                            paper_url = href
+                        elif not paper_url and href.startswith("http"):
+                            paper_url = href
 
                 if not paper_url:
                     paper_url = entry_id
 
+                if paper_url and not pdf_url:
+                    pdf_url = self.derive_pdf_url(paper_url)
+
                 if paper_url:
                     urls.append(paper_url)
-                    self._entry_cache[paper_url] = {
+                    entry_data = {
                         "url": paper_url,
+                        "pdf_url": pdf_url,
                         "title": title,
                         "authors": ", ".join(authors) if authors else "arXiv Contributor",
                         "published_date": published,
                         "summary": summary,
                     }
+                    self._entry_cache[paper_url] = entry_data
+                    if pdf_url:
+                        self._entry_cache[pdf_url] = entry_data
 
                 if len(urls) >= limit:
                     break
@@ -735,14 +763,68 @@ class ArxivRetrievalClient(BaseRetrievalClient):
             logger.debug(f"arXiv search failed: {e}")
             return []
 
+    def fetch_pdf_stream(self, pdf_url: str, timeout: float = 10.0) -> Optional[bytes]:
+        """Download raw PDF bytes from an arXiv or academic PDF URL."""
+        if not pdf_url:
+            return None
+        req = urllib.request.Request(
+            pdf_url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "application/pdf,*/*;q=0.8",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read(self.fetcher.MAX_DOWNLOAD_BYTES)
+        except Exception as err:
+            logger.debug(f"Failed to download arXiv PDF stream from {pdf_url}: {err}")
+            return None
+
     def fetch_url(self, url: str, timeout: float = 8.0) -> RawWebDocument:
-        """Fetch paper abstract and metadata as structured HTML document."""
+        """Fetch paper abstract and optional full-text PDF stream as structured HTML document."""
+        try:
+            from research_synthesis.retrieval.pdf_parser import ZeroDepPDFExtractor
+        except ImportError:
+            from .pdf_parser import ZeroDepPDFExtractor
+
+        is_direct_pdf = "/pdf/" in url.lower() or url.lower().split("?")[0].endswith(".pdf")
         entry = self._entry_cache.get(url)
+
+        if is_direct_pdf:
+            pdf_bytes = self.fetch_pdf_stream(url, timeout=timeout)
+            if pdf_bytes and ZeroDepPDFExtractor.is_pdf_bytes(pdf_bytes):
+                raw_html = ZeroDepPDFExtractor.pdf_bytes_to_html(
+                    pdf_bytes=pdf_bytes,
+                    url=url,
+                    fallback_title=entry.get("title", "arXiv Paper") if entry else "arXiv Preprint PDF",
+                    fallback_author=entry.get("authors", "") if entry else "arXiv Contributor",
+                    fallback_date=entry.get("published_date", "") if entry else "",
+                    abstract_summary=entry.get("summary", "") if entry else "",
+                )
+                return RawWebDocument(
+                    url=url,
+                    status_code=200,
+                    headers={"Content-Type": "text/html; charset=utf-8", "X-Source-Format": "application/pdf"},
+                    raw_html=raw_html,
+                )
+
         if entry:
             title = entry.get("title", "arXiv Paper")
             authors = entry.get("authors", "")
             date_str = entry.get("published_date", "")
             summary = entry.get("summary", "")
+            pdf_url = entry.get("pdf_url") or self.derive_pdf_url(url)
+
+            fulltext_html = ""
+            if self.fetch_pdf and pdf_url:
+                pdf_bytes = self.fetch_pdf_stream(pdf_url, timeout=timeout)
+                if pdf_bytes and ZeroDepPDFExtractor.is_pdf_bytes(pdf_bytes):
+                    extracted = ZeroDepPDFExtractor.extract_from_bytes(pdf_bytes)
+                    if extracted.paragraphs:
+                        p_tags = "\n".join(f"<p>{html.escape(p)}</p>" for p in extracted.paragraphs)
+                        fulltext_html = f'\n<div class="pdf-fulltext">\n{p_tags}\n</div>'
+
             raw_html = (
                 f"<!DOCTYPE html>\n"
                 f"<html lang=\"en\"><head>\n"
@@ -753,7 +835,7 @@ class ArxivRetrievalClient(BaseRetrievalClient):
                 f"</head><body><main>\n"
                 f"<h1>{html.escape(title)}</h1>\n"
                 f'<div class="byline">By {html.escape(authors)} on {html.escape(date_str)}</div>\n'
-                f'<div class="abstract"><p>{html.escape(summary)}</p></div>\n'
+                f'<div class="abstract"><p>{html.escape(summary)}</p></div>{fulltext_html}\n'
                 f"</main></body></html>"
             )
             return RawWebDocument(

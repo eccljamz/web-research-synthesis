@@ -40,6 +40,17 @@ try:
         MarkdownFormatter,
         ObsidianExporter,
     )
+    from research_synthesis.synthesis.comparative import (
+        ComparativeSynthesisEngine,
+        ComparativeSynthesisResult,
+        CrossBriefTradeoffRow,
+        LongitudinalTracker,
+        TemporalShiftIndicator,
+    )
+    from research_synthesis.retrieval.pdf_parser import (
+        ExtractedPDFDocument,
+        ZeroDepPDFExtractor,
+    )
 except ImportError:
     from src.research_synthesis.models import (
         BriefMetadata,
@@ -66,6 +77,17 @@ except ImportError:
         JSONSchemaSerializer,
         MarkdownFormatter,
         ObsidianExporter,
+    )
+    from src.research_synthesis.synthesis.comparative import (
+        ComparativeSynthesisEngine,
+        ComparativeSynthesisResult,
+        CrossBriefTradeoffRow,
+        LongitudinalTracker,
+        TemporalShiftIndicator,
+    )
+    from src.research_synthesis.retrieval.pdf_parser import (
+        ExtractedPDFDocument,
+        ZeroDepPDFExtractor,
     )
 
 def run_server(*args, **kwargs):
@@ -97,5 +119,12 @@ __all__ = [
     "JSONSchemaSerializer",
     "HTMLReportFormatter",
     "ObsidianExporter",
+    "ComparativeSynthesisEngine",
+    "ComparativeSynthesisResult",
+    "CrossBriefTradeoffRow",
+    "LongitudinalTracker",
+    "TemporalShiftIndicator",
+    "ZeroDepPDFExtractor",
+    "ExtractedPDFDocument",
     "run_server",
 ]

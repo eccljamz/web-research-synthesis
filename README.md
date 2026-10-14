@@ -90,7 +90,56 @@ python -m research_synthesis.server --port 8080 --mode mock --open-browser
 - `GET /brief/{brief_id}` — Standalone rendered HTML report.
 - `GET /brief/{brief_id}/markdown` — Formatted Markdown report.
 - `POST /api/synthesize` — Trigger synthesis job (`{"topic": "...", "mode": "mock"|"live", "async": true}`).
+- `POST /api/compare` — Synthesize comparative & longitudinal meta-brief across multiple topics or brief IDs.
 - `GET /api/jobs/{job_id}` — Poll background synthesis progress and stage status.
+
+---
+
+## Comparative & Longitudinal Synthesis (Track A)
+
+Synthesize a cross-topic comparative meta-brief with technological trade-off matrices, cost parity curves, and longitudinal velocity tracking:
+
+```bash
+python -m research_synthesis.cli "Solid-State Battery Commercialization" \
+  --compare "Global Supply Chain Re-Shoring" --mode=mock
+```
+
+Or via Python API:
+
+```python
+from research_synthesis import ComparativeSynthesisEngine, ResearchPipeline
+
+pipeline = ResearchPipeline(mode="mock")
+comparison = pipeline.compare([
+    "Next-Generation Solid-State Battery Commercialization",
+    "Global Supply Chain Re-Shoring and Friend-Shoring Dynamics",
+])
+print(comparison.meta_brief.to_markdown())
+```
+
+---
+
+## Zero-Dependency PDF Stream Ingestion (Track B)
+
+Extract full-text academic preprints and `/FlateDecode` compressed PDF streams using pure Python standard library (`zlib`):
+
+```python
+from research_synthesis import ZeroDepPDFExtractor
+
+extracted = ZeroDepPDFExtractor.extract_from_bytes(pdf_bytes)
+print(extracted.title, extracted.page_count, len(extracted.paragraphs))
+```
+
+---
+
+## Containerized Deployment (Track C)
+
+Build and run the minimal `< 60 MB` `python:3.11-alpine` container image:
+
+```bash
+docker build -t research-synthesis:0.1.0 .
+docker run --rm -p 8080:8080 research-synthesis:0.1.0
+```
 
 ---
 
@@ -122,7 +171,7 @@ json_dict = brief.to_dict()
 
 ## Verification & Test Harness
 
-Run the full unit and adversarial test suite (265 tests, zero deprecation warnings):
+Run the full unit and adversarial test suite (280+ tests, zero deprecation warnings):
 
 ```bash
 python -W error::DeprecationWarning -m unittest discover -s tests -v
