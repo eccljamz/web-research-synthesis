@@ -601,6 +601,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <button class="tab-btn" onclick="switchTab('markdown')">Markdown</button>
                         <button class="tab-btn" onclick="switchTab('json')">JSON Schema</button>
                         <button class="tab-btn" onclick="switchTab('graph')">Knowledge Graph</button>
+                        <button class="tab-btn" onclick="switchTab('compare')">Compare &amp; Velocity</button>
                         <div style="margin-left: auto; display: flex; gap: 0.5rem;">
                             <button class="btn" onclick="copyCurrentContent()" title="Copy active content to clipboard">Copy</button>
                             <button class="btn" onclick="downloadCurrentContent()" title="Download current artifact">Download</button>
@@ -610,7 +611,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
                     <div id="emptyView" class="empty-placeholder">
                         <h3>No Research Brief Loaded</h3>
-                        <p style="margin-top: 0.5rem;">Submit a research query on the left or select an archived brief to begin.</p>
+                        <p style="margin-top: 0.5rem;">Submit a research query on the left, select an archived brief, or open the <strong>Compare &amp; Velocity</strong> tab.</p>
                     </div>
 
                     <div id="htmlTab" class="tab-content active" style="display: none;">
@@ -635,6 +636,68 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+
+                    <div id="compareTab" class="tab-content" style="display: none;">
+                        <div style="border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--code-bg); margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem;">
+                                <div>
+                                    <h3 style="margin: 0; font-size: 1rem;">Cross-Brief Comparative &amp; Longitudinal Velocity Engine</h3>
+                                    <p style="margin: 0.2rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compare 2+ archived briefs or synthesize two topics side-by-side to inspect trade-off matrices, cost parity curves, and annualized velocity shifts.</p>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="button" class="btn" onclick="setComparePreset('Next-Generation Solid-State Battery Commercialization', 'Global Supply Chain Re-Shoring and Friend-Shoring Dynamics')">Preset: Batteries vs. Supply Chain</button>
+                                    <button type="button" class="btn" onclick="setComparePreset('The Little Ice Age Climate Shocks in 17th Century Europe', 'Microplastic Bioaccumulation in Agricultural Soil Ecosystems')">Preset: Climate vs. Microplastics</button>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.75rem; align-items: end;">
+                                <div>
+                                    <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Topic / Brief A</label>
+                                    <input type="text" id="compareTopicA" value="Next-Generation Solid-State Battery Commercialization" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text-primary);" />
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Topic / Brief B</label>
+                                    <input type="text" id="compareTopicB" value="Global Supply Chain Re-Shoring and Friend-Shoring Dynamics" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text-primary);" />
+                                </div>
+                                <button type="button" class="btn btn-primary" id="runCompareBtn" onclick="runComparison()">Run Comparison</button>
+                            </div>
+                            <div id="compareBriefCheckboxes" style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-secondary);"></div>
+                        </div>
+
+                        <div id="compareOutput" style="display: none;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <div>
+                                    <h3 id="compareTitle" style="margin: 0; font-size: 1.05rem;"></h3>
+                                    <div id="compareMeta" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;"></div>
+                                </div>
+                                <button type="button" class="btn btn-primary" id="openMetaBriefBtn" style="display: none;">Open Full Meta-Brief (HTML/Graph)</button>
+                            </div>
+
+                            <!-- 1. Trade-Off Matrix Table -->
+                            <div style="margin-bottom: 1.25rem;">
+                                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem;">1. Quantitative Trade-Off Matrix</h4>
+                                <div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+                                    <table id="tradeoffTable" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                        <thead></thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 2. Longitudinal Velocity SVG Chart -->
+                            <div style="margin-bottom: 1.25rem;">
+                                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem;">2. Longitudinal Velocity &amp; Cost Parity Trajectories</h4>
+                                <div style="width: 100%; height: 320px; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg); position: relative; overflow: hidden;">
+                                    <svg id="velocitySvg" style="width: 100%; height: 100%; display: block;"></svg>
+                                </div>
+                            </div>
+
+                            <!-- 3. Temporal Shift Cards -->
+                            <div style="margin-bottom: 1.25rem;">
+                                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem;">3. Temporal Shift Indicators &amp; Annualized Velocity</h4>
+                                <div id="temporalShiftCards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>
@@ -643,12 +706,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <script>
         let currentBriefId = null;
         let currentBriefData = null;
+        let currentComparisonData = null;
         let activeTab = 'html';
         let currentJobId = null;
         let pollInterval = null;
 
         function setTopic(text) {
             document.getElementById('topicInput').value = text;
+        }
+
+        function setComparePreset(topicA, topicB) {
+            document.getElementById('compareTopicA').value = topicA;
+            document.getElementById('compareTopicB').value = topicB;
+            document.querySelectorAll('.cmp-brief-cb').forEach(cb => { cb.checked = false; });
         }
 
         function toggleTheme() {
@@ -660,6 +730,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             if (activeTab === 'graph' && currentBriefData) {
                 renderGraph(currentBriefData);
             }
+            if (activeTab === 'compare' && currentComparisonData) {
+                renderVelocityChart(currentComparisonData);
+            }
         }
 
         // Initialize theme
@@ -670,16 +743,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         function switchTab(tab) {
             activeTab = tab;
-            const tabs = ['html', 'markdown', 'json', 'graph'];
+            const tabs = ['html', 'markdown', 'json', 'graph', 'compare'];
             document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
                 btn.classList.toggle('active', tabs[idx] === tab);
             });
+            document.getElementById('emptyView').style.display = (tab !== 'compare' && !currentBriefId) ? 'block' : 'none';
             document.getElementById('htmlTab').style.display = (tab === 'html' && currentBriefId) ? 'block' : 'none';
             document.getElementById('markdownTab').style.display = (tab === 'markdown' && currentBriefId) ? 'block' : 'none';
             document.getElementById('jsonTab').style.display = (tab === 'json' && currentBriefId) ? 'block' : 'none';
             document.getElementById('graphTab').style.display = (tab === 'graph' && currentBriefId) ? 'block' : 'none';
+            document.getElementById('compareTab').style.display = (tab === 'compare') ? 'block' : 'none';
             if (tab === 'graph' && currentBriefId && currentBriefData) {
                 renderGraph(currentBriefData);
+            }
+            if (tab === 'compare' && currentComparisonData) {
+                renderVelocityChart(currentComparisonData);
             }
         }
 
@@ -1051,11 +1129,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const res = await fetch('/api/briefs');
                 const briefs = await res.json();
                 const listEl = document.getElementById('archiveList');
+                const cbContainer = document.getElementById('compareBriefCheckboxes');
                 listEl.innerHTML = '';
 
                 if (!briefs || briefs.length === 0) {
                     listEl.innerHTML = '<li style="padding: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">No briefs available.</li>';
+                    if (cbContainer) cbContainer.innerHTML = '';
                     return;
+                }
+
+                if (cbContainer) {
+                    cbContainer.innerHTML = '<div style="margin-bottom: 0.35rem; font-weight: 600;">Or select 2+ existing briefs from archive:</div>' +
+                        briefs.slice(0, 8).map(b => `
+                            <label style="display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 0.85rem; cursor: pointer;">
+                                <input type="checkbox" class="cmp-brief-cb" value="${escapeHtml(b.brief_id)}" />
+                                <span>${escapeHtml(b.topic.length > 42 ? b.topic.substring(0, 40) + '...' : b.topic)} (<code>${escapeHtml(b.brief_id)}</code>)</span>
+                            </label>
+                        `).join('');
                 }
 
                 briefs.forEach(b => {
@@ -1080,6 +1170,198 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
+        async function runComparison() {
+            const btn = document.getElementById('runCompareBtn');
+            const selectedIds = Array.from(document.querySelectorAll('.cmp-brief-cb:checked')).map(cb => cb.value);
+            const topicA = document.getElementById('compareTopicA').value.trim();
+            const topicB = document.getElementById('compareTopicB').value.trim();
+            const mode = document.getElementById('modeSelect').value || 'mock';
+
+            const payload = { mode };
+            if (selectedIds.length >= 2) {
+                payload.brief_ids = selectedIds;
+            } else if (topicA && topicB) {
+                payload.topics = [topicA, topicB];
+            } else {
+                alert('Select at least 2 existing briefs or enter Topic A and Topic B.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Comparing...';
+            document.getElementById('statusPill').className = 'status-pill running';
+            document.getElementById('serverStatusText').textContent = 'Comparing';
+
+            try {
+                const res = await fetch('/api/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!res.ok || data.error) {
+                    alert('Comparison failed: ' + (data.error || res.statusText));
+                } else {
+                    currentComparisonData = data;
+                    renderComparison(data);
+                    loadBriefsArchive();
+                }
+            } catch (err) {
+                alert('Comparison error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Comparison';
+                document.getElementById('statusPill').className = 'status-pill ready';
+                document.getElementById('serverStatusText').textContent = 'Ready';
+            }
+        }
+
+        function renderComparison(cmp) {
+            document.getElementById('compareOutput').style.display = 'block';
+            const topics = cmp.topics || [];
+            document.getElementById('compareTitle').textContent = (cmp.meta_brief && cmp.meta_brief.topic) || topics.join(' vs. ');
+            const sharedCount = (cmp.shared_entities || []).length;
+            const shiftsCount = (cmp.temporal_shifts || []).length;
+            const rowsCount = (cmp.tradeoff_matrix || []).length;
+            document.getElementById('compareMeta').innerHTML = `Comparison ID: <code>${escapeHtml(cmp.comparison_id)}</code> • <strong>${rowsCount}</strong> Trade-off Dimensions • <strong>${shiftsCount}</strong> Velocity Shifts • <strong>${sharedCount}</strong> Shared Entities`;
+
+            const openBtn = document.getElementById('openMetaBriefBtn');
+            if (cmp.meta_brief && cmp.meta_brief.brief_id) {
+                openBtn.style.display = 'inline-block';
+                openBtn.onclick = () => {
+                    loadBrief(cmp.meta_brief.brief_id);
+                    switchTab('html');
+                };
+            }
+
+            // 1. Render Trade-Off Matrix Table
+            const table = document.getElementById('tradeoffTable');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            thead.innerHTML = `<tr style="background: var(--code-bg); border-bottom: 1px solid var(--border); text-align: left;">
+                <th style="padding: 0.6rem;">Dimension</th>
+                <th style="padding: 0.6rem;">Unit</th>
+                ${topics.map(t => `<th style="padding: 0.6rem;">${escapeHtml(t)}</th>`).join('')}
+                <th style="padding: 0.6rem;">Delta / Synthesis</th>
+                <th style="padding: 0.6rem;">Citations</th>
+            </tr>`;
+
+            const matrix = cmp.tradeoff_matrix || [];
+            if (matrix.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${topics.length + 4}" style="padding: 0.75rem; color: var(--text-secondary);">No overlapping quantitative dimensions detected.</td></tr>`;
+            } else {
+                tbody.innerHTML = matrix.map(row => `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.6rem; font-weight: 600;">${escapeHtml(row.dimension)}</td>
+                        <td style="padding: 0.6rem;"><code>${escapeHtml(row.unit)}</code></td>
+                        ${topics.map(t => `<td style="padding: 0.6rem;">${escapeHtml((row.values_by_topic && row.values_by_topic[t]) || '—')}</td>`).join('')}
+                        <td style="padding: 0.6rem;">${escapeHtml(row.delta_summary || '')}</td>
+                        <td style="padding: 0.6rem;"><code>${(row.citation_indices || []).map(i => '[' + i + ']').join(' ')}</code></td>
+                    </tr>
+                `).join('');
+            }
+
+            // 2. Render Longitudinal Velocity Chart
+            renderVelocityChart(cmp);
+
+            // 3. Render Temporal Shift Cards
+            const cardsEl = document.getElementById('temporalShiftCards');
+            const shifts = cmp.temporal_shifts || [];
+            if (shifts.length === 0) {
+                cardsEl.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem;">No multi-year temporal shifts detected.</div>';
+            } else {
+                cardsEl.innerHTML = shifts.map(s => {
+                    const velStr = (s.annual_velocity !== null && s.annual_velocity !== undefined)
+                        ? `${s.annual_velocity > 0 ? '+' : ''}${s.annual_velocity} ${s.unit}/yr`
+                        : `${s.span_years} yr span`;
+                    return `
+                        <div style="border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; background: var(--card-bg);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                <span style="font-weight: 600; font-size: 0.85rem;">${escapeHtml(s.dimension)}</span>
+                                <span class="badge">${escapeHtml(s.trajectory)}</span>
+                            </div>
+                            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.35rem;">
+                                ${escapeHtml(s.topic)} • <strong>${s.start_year} → ${s.end_year}</strong> (${escapeHtml(velStr)})
+                            </div>
+                            <div style="font-size: 0.82rem;">${escapeHtml(s.summary)}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        function renderVelocityChart(cmp) {
+            const svg = document.getElementById('velocitySvg');
+            if (!svg || !cmp) return;
+            svg.innerHTML = '';
+
+            const width = svg.clientWidth || 760;
+            const height = svg.clientHeight || 300;
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+            const shifts = (cmp.temporal_shifts || []).filter(s => s.baseline_value !== null && s.target_value !== null);
+            if (shifts.length === 0) {
+                const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                txt.setAttribute('x', width / 2);
+                txt.setAttribute('y', height / 2);
+                txt.setAttribute('text-anchor', 'middle');
+                txt.setAttribute('fill', 'var(--text-secondary)');
+                txt.setAttribute('font-size', '13px');
+                txt.textContent = 'Run a comparison with dated quantitative projections to visualize longitudinal trajectories.';
+                svg.appendChild(txt);
+                return;
+            }
+
+            const padL = 65, padR = 45, padT = 35, padB = 45;
+            const plotW = width - padL - padR;
+            const plotH = height - padT - padB;
+
+            const years = [];
+            const vals = [];
+            shifts.forEach(s => {
+                years.push(s.start_year, s.end_year);
+                vals.push(s.baseline_value, s.target_value);
+            });
+            const minYear = Math.min(...years);
+            const maxYear = Math.max(...years, minYear + 1);
+            const minVal = Math.min(...vals, 0);
+            const maxVal = Math.max(...vals, minVal + 1);
+
+            const xForYear = y => padL + ((y - minYear) / (maxYear - minYear)) * plotW;
+            const yForVal = v => padT + plotH - ((v - minVal) / (maxVal - minVal)) * plotH;
+
+            // Axes
+            const axisG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            axisG.innerHTML = `
+                <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="var(--border)" stroke-width="1.5"/>
+                <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="var(--border)" stroke-width="1.5"/>
+                <text x="${padL}" y="${padT + plotH + 22}" fill="var(--text-secondary)" font-size="11" text-anchor="middle">${minYear}</text>
+                <text x="${padL + plotW}" y="${padT + plotH + 22}" fill="var(--text-secondary)" font-size="11" text-anchor="middle">${maxYear}</text>
+                <text x="${padL - 8}" y="${padT + 8}" fill="var(--text-secondary)" font-size="11" text-anchor="end">${Math.round(maxVal)}</text>
+                <text x="${padL - 8}" y="${padT + plotH}" fill="var(--text-secondary)" font-size="11" text-anchor="end">${Math.round(minVal)}</text>
+            `;
+            svg.appendChild(axisG);
+
+            const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+            shifts.forEach((s, idx) => {
+                const color = palette[idx % palette.length];
+                const x1 = xForYear(s.start_year);
+                const y1 = yForVal(s.baseline_value);
+                const x2 = xForYear(s.end_year);
+                const y2 = yForVal(s.target_value);
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.innerHTML = `
+                    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2.5"/>
+                    <circle cx="${x1}" cy="${y1}" r="5" fill="${color}"/>
+                    <circle cx="${x2}" cy="${y2}" r="6" fill="${color}" stroke="#ffffff" stroke-width="1.5"/>
+                    <text x="${x2}" y="${y2 - 10}" fill="var(--text-primary)" font-size="10" text-anchor="middle">${escapeHtml(s.dimension)} (${s.target_value} ${escapeHtml(s.unit)})</text>
+                    <title>${escapeHtml(s.summary)}</title>
+                `;
+                svg.appendChild(g);
+            });
+        }
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -1092,8 +1374,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 content = document.getElementById('markdownCode').textContent;
             } else if (activeTab === 'json') {
                 content = document.getElementById('jsonCode').textContent;
+            } else if (activeTab === 'compare' && currentComparisonData) {
+                content = JSON.stringify(currentComparisonData, null, 2);
             } else {
-                alert('To copy HTML, open the brief in a new tab or view Markdown/JSON tabs.');
+                alert('To copy HTML, open the brief in a new tab or view Markdown/JSON/Compare tabs.');
                 return;
             }
             navigator.clipboard.writeText(content).then(() => {

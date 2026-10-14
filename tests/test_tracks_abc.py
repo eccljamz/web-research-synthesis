@@ -370,6 +370,16 @@ class TestTrackCDeploymentAndDistribution(unittest.TestCase):
         self.assertIn("HEALTHCHECK", dockerfile_text)
         self.assertIn("USER research", dockerfile_text)
 
+    def test_dashboard_html_exposes_compare_and_velocity_ui_tab(self) -> None:
+        from research_synthesis.server import DASHBOARD_HTML
+
+        self.assertIn("switchTab('compare')", DASHBOARD_HTML)
+        self.assertIn('id="compareTab"', DASHBOARD_HTML)
+        self.assertIn('id="tradeoffTable"', DASHBOARD_HTML)
+        self.assertIn('id="velocitySvg"', DASHBOARD_HTML)
+        self.assertIn("async function runComparison()", DASHBOARD_HTML)
+        self.assertIn("function renderVelocityChart(", DASHBOARD_HTML)
+
 
 if __name__ == "__main__":
     unittest.main()
